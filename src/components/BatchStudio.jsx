@@ -59,6 +59,40 @@ const getSupportedMimeType = (isAudio, preferredType) => {
   return "";
 };
 
+function encodeWAV(audioBuffer) {
+  const numCh = audioBuffer.numberOfChannels;
+  const sr = audioBuffer.sampleRate;
+  const len = audioBuffer.length;
+  const bps = 16,
+    blockAlign = numCh * 2,
+    dataSize = len * blockAlign;
+  const buf = new ArrayBuffer(44 + dataSize);
+  const v = new DataView(buf);
+  const str = (off, s) =>
+    [...s].forEach((c, i) => v.setUint8(off + i, c.charCodeAt(0)));
+  str(0, "RIFF");
+  v.setUint32(4, 36 + dataSize, true);
+  str(8, "WAVE");
+  str(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, numCh, true);
+  v.setUint32(24, sr, true);
+  v.setUint32(28, sr * blockAlign, true);
+  v.setUint16(32, blockAlign, true);
+  v.setUint16(34, bps, true);
+  str(36, "data");
+  v.setUint32(40, dataSize, true);
+  let off = 44;
+  for (let i = 0; i < len; i++)
+    for (let ch = 0; ch < numCh; ch++) {
+      const s = Math.max(-1, Math.min(1, audioBuffer.getChannelData(ch)[i]));
+      v.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      off += 2;
+    }
+  return new Blob([buf], { type: "audio/wav" });
+}
+
 // --- Main Panel ---
 export default function BatchStudioPanel() {
   // Asset Management
@@ -71,7 +105,6 @@ export default function BatchStudioPanel() {
   const [targetVidFormat, setTargetVidFormat] = useState("video/mp4");
   const [vidOutputMode, setVidOutputMode] = useState("video");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [progress, setProgress] = useState(0);
 
   // UI & View States
   const [previewId, setPreviewId] = useState(null);
@@ -111,6 +144,7 @@ export default function BatchStudioPanel() {
       originalSize: file.size,
       preview: URL.createObjectURL(file),
       status: "pending",
+      progress: 0,
       trim: { start: 0, end: 0, hasBeenTrimmed: false },
     }));
     setFiles((prev) => [...prev, ...newFiles]);
@@ -133,13 +167,15 @@ export default function BatchStudioPanel() {
     );
   };
 
+  const updateFile = useCallback((id, patch) => {
+    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)));
+  }, []);
+
   // Processing Engine
   const processMedia = useCallback(async () => {
     if (files.length === 0) return;
     setIsProcessing(true);
-    setProgress(0);
 
-    // Start from existing results; only process files not yet done
     const results = [...processedFiles];
     const pending = files.filter(
       (f) => !results.find((p) => p.id === f.id && p.status === "done"),
@@ -149,45 +185,43 @@ export default function BatchStudioPanel() {
       return;
     }
 
-    // Shared progress counter
-    let done = 0;
-    const tick = () => {
-      done++;
-      setProgress(Math.round((done / pending.length) * 100));
-    };
-
-    // ── Images: process ALL in parallel (canvas is fast, no real-time constraint)
     const imageItems = pending.filter((f) => f.type === "image");
     const mediaItems = pending.filter((f) => f.type !== "image");
 
+    // Mark all pending as processing immediately
+    setFiles((prev) =>
+      prev.map((f) =>
+        pending.find((p) => p.id === f.id)
+          ? { ...f, status: "processing", progress: 0 }
+          : f,
+      ),
+    );
+
+    // ── IMAGES: parallel (fast)
     if (imageItems.length > 0) {
       const imageResults = await Promise.all(
         imageItems.map(async (item) => {
           try {
             const img = new Image();
             img.src = item.preview;
-            await new Promise((resolve, reject) => {
-              img.onload = resolve;
-              img.onerror = () => reject(new Error("Image load failed"));
+            await new Promise((res, rej) => {
+              img.onload = res;
+              img.onerror = () => rej(new Error("Load failed"));
             });
-
             const canvas = document.createElement("canvas");
             const ctx = canvas.getContext("2d");
             canvas.width = Math.max(1, Math.round(img.width * autoScale));
             canvas.height = Math.max(1, Math.round(img.height * autoScale));
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-            const blob = await new Promise((resolve, reject) => {
+            const blob = await new Promise((res, rej) =>
               canvas.toBlob(
-                (b) =>
-                  b ? resolve(b) : reject(new Error("toBlob returned null")),
+                (b) => (b ? res(b) : rej(new Error("toBlob failed"))),
                 targetImgFormat,
                 quality,
-              );
-            });
-
-            tick();
+              ),
+            );
             const ext = targetImgFormat.split("/")[1] || "jpg";
+            updateFile(item.id, { status: "done", progress: 100 });
             return {
               ...item,
               processedUrl: URL.createObjectURL(blob),
@@ -199,7 +233,7 @@ export default function BatchStudioPanel() {
               outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.${ext}`,
             };
           } catch (err) {
-            tick();
+            updateFile(item.id, { status: "error" });
             return {
               ...item,
               status: "error",
@@ -211,43 +245,82 @@ export default function BatchStudioPanel() {
         }),
       );
       results.push(...imageResults);
-      // Show image results immediately while videos queue up
       setProcessedFiles([...results]);
     }
 
-    // ── Videos/audio: must be sequential (real-time MediaRecorder constraint)
+    // ── MEDIA: sequential
     for (const item of mediaItems) {
+      updateFile(item.id, { status: "processing", progress: 0 });
       try {
-        /* ══════════════════ VIDEO / AUDIO ══════════════════ */
-        {
-          const isAudioMode = vidOutputMode === "audio";
+        const isAudioMode = vidOutputMode === "audio";
 
+        if (isAudioMode) {
+          // ── FAST AUDIO via OfflineAudioContext (not real-time!)
+          updateFile(item.id, { progress: 10 });
+          const response = await fetch(item.preview);
+          const arrayBuffer = await response.arrayBuffer();
+          updateFile(item.id, { progress: 30 });
+
+          const tempCtx = new (
+            window.AudioContext || window.webkitAudioContext
+          )();
+          const audioBuffer = await tempCtx.decodeAudioData(arrayBuffer);
+          await tempCtx.close();
+          updateFile(item.id, { progress: 55 });
+
+          const sr = audioBuffer.sampleRate;
+          const startTime = item.trim?.start || 0;
+          const endTime =
+            item.trim?.end && item.trim.end > 0
+              ? item.trim.end
+              : audioBuffer.duration;
+          const duration = Math.max(0.1, endTime - startTime);
+          const frameCount = Math.round(duration * sr);
+
+          const offlineCtx = new OfflineAudioContext(
+            audioBuffer.numberOfChannels,
+            frameCount,
+            sr,
+          );
+          const src = offlineCtx.createBufferSource();
+          src.buffer = audioBuffer;
+          src.connect(offlineCtx.destination);
+          src.start(0, startTime, duration);
+          const rendered = await offlineCtx.startRendering();
+          updateFile(item.id, { progress: 85 });
+
+          const blob = encodeWAV(rendered);
+          const result = {
+            ...item,
+            processedUrl: URL.createObjectURL(blob),
+            processedSize: blob.size,
+            blob,
+            status: "done",
+            outputType: "audio",
+            dimensions: "Audio Extract (WAV)",
+            outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.wav`,
+          };
+          results.push(result);
+          setProcessedFiles([...results]);
+          updateFile(item.id, { status: "done", progress: 100 });
+        } else {
+          // ── VIDEO: real-time canvas recording (no way around it without WASM)
           const video = document.createElement("video");
           video.src = item.preview;
-          video.muted = true; // MUST stay muted for reliable autoplay
+          video.muted = true;
           video.setAttribute("playsinline", "");
           video.preload = "metadata";
-
-          // Load metadata
           await new Promise((resolve, reject) => {
             if (video.readyState >= 1) {
               resolve();
               return;
             }
-            const onMeta = () => {
-              cleanup();
-              resolve();
-            };
-            const onErr = () => {
-              cleanup();
-              reject(new Error("Video load failed"));
-            };
-            const cleanup = () => {
-              video.removeEventListener("loadedmetadata", onMeta);
-              video.removeEventListener("error", onErr);
-            };
-            video.addEventListener("loadedmetadata", onMeta, { once: true });
-            video.addEventListener("error", onErr, { once: true });
+            video.addEventListener("loadedmetadata", resolve, { once: true });
+            video.addEventListener(
+              "error",
+              () => reject(new Error("Video load failed")),
+              { once: true },
+            );
           });
 
           const startTime = item.trim?.start || 0;
@@ -257,138 +330,66 @@ export default function BatchStudioPanel() {
               : video.duration;
           const duration = Math.max(0.5, endTime - startTime);
 
-          // Seek to start (guard: onseeked may never fire if already there)
           if (Math.abs(video.currentTime - startTime) > 0.05) {
             video.currentTime = startTime;
             await new Promise((resolve) => {
-              const onSeeked = () => {
-                video.removeEventListener("seeked", onSeeked);
-                resolve();
-              };
-              video.addEventListener("seeked", onSeeked, { once: true });
-              setTimeout(resolve, 2000); // safety — resolve after 2s anyway
+              video.addEventListener("seeked", resolve, { once: true });
+              setTimeout(resolve, 2000);
             });
           }
 
-          /* ═ Build the recording stream ═════════════════════════ */
-          let recordingStream;
-          let canvas = null;
-          let ctx = null;
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          canvas.width = Math.max(1, Math.round(video.videoWidth * autoScale));
+          canvas.height = Math.max(
+            1,
+            Math.round(video.videoHeight * autoScale),
+          );
+          const recordingStream = canvas.captureStream(30);
           let drawRafId = null;
-
-          if (isAudioMode) {
-            // Strategy A: HTMLVideoElement.captureStream() — cleanest, no AudioContext
-            const captureStreamFn =
-              video.captureStream || video.mozCaptureStream;
-            if (captureStreamFn) {
-              const raw = captureStreamFn.call(video);
-              const audioTracks = raw.getAudioTracks();
-              if (audioTracks.length > 0) {
-                recordingStream = new MediaStream(audioTracks);
-              }
-            }
-
-            // Strategy B: AudioContext fallback
-            if (!recordingStream) {
-              const AudioCtxClass =
-                window.AudioContext || window.webkitAudioContext;
-              if (AudioCtxClass) {
-                const audioCtx = new AudioCtxClass();
-                if (audioCtx.state === "suspended") await audioCtx.resume();
-                // NOTE: must unmute briefly so element routes through AudioContext
-                video.muted = false;
-                const src = audioCtx.createMediaElementSource(video);
-                const dst = audioCtx.createMediaStreamDestination();
-                src.connect(dst);
-                // Re-mute the speakers output (AudioContext still captures)
-                audioCtx.destination.channelCount = 0;
-                recordingStream = dst.stream;
-              }
-            }
-
-            if (!recordingStream) {
-              throw new Error(
-                "Could not create audio stream. Try a different browser.",
-              );
-            }
-          } else {
-            // Video mode: canvas capture (always works; muted video always plays)
-            canvas = document.createElement("canvas");
-            ctx = canvas.getContext("2d");
-            canvas.width = Math.max(
-              1,
-              Math.round(video.videoWidth * autoScale),
-            );
-            canvas.height = Math.max(
-              1,
-              Math.round(video.videoHeight * autoScale),
-            );
-
-            recordingStream = canvas.captureStream(30);
-
-            // Draw loop — started AFTER play() call below
+          video.addEventListener("playing", function startDraw() {
+            video.removeEventListener("playing", startDraw);
             const drawLoop = () => {
               ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
               if (!video.paused && !video.ended)
                 drawRafId = requestAnimationFrame(drawLoop);
             };
-            video.addEventListener("playing", function startDraw() {
-              video.removeEventListener("playing", startDraw);
-              drawLoop();
-            });
-          }
+            drawLoop();
+          });
 
-          /* ═ Set up MediaRecorder ══════════════════════════════ */
-          const mimeType = getSupportedMimeType(
-            isAudioMode,
-            isAudioMode ? "audio/webm" : "video/webm;codecs=vp8",
-          );
-          if (!mimeType)
-            throw new Error("MediaRecorder: no supported MIME type.");
+          const mimeType = getSupportedMimeType(false, "video/webm;codecs=vp8");
+          if (!mimeType) throw new Error("No supported video MIME type.");
 
-          const recorderOptions = { mimeType };
-          if (!isAudioMode) {
-            recorderOptions.videoBitsPerSecond = Math.max(
-              500_000,
-              quality * 25_000_000,
-            );
-          }
-          recorderOptions.audioBitsPerSecond = Math.round(quality * 320_000);
-
-          const recorder = new MediaRecorder(recordingStream, recorderOptions);
+          const recorder = new MediaRecorder(recordingStream, {
+            mimeType,
+            videoBitsPerSecond: Math.max(500_000, quality * 25_000_000),
+          });
           const chunks = [];
           recorder.ondataavailable = (e) => {
             if (e.data.size > 0) chunks.push(e.data);
           };
 
-          // Promise that resolves when recorder.onstop fires
           const stopPromise = new Promise((resolve) => {
             recorder.onstop = () => {
               if (drawRafId) cancelAnimationFrame(drawRafId);
-              const outputMime = isAudioMode ? "audio/webm" : "video/webm";
-              const blob = new Blob(chunks, { type: outputMime });
+              const blob = new Blob(chunks, { type: "video/webm" });
               resolve({
                 ...item,
                 processedUrl: URL.createObjectURL(blob),
                 processedSize: blob.size,
                 blob,
                 status: "done",
-                outputType: vidOutputMode,
-                dimensions: isAudioMode
-                  ? "Audio Extract"
-                  : `${canvas.width}x${canvas.height}`,
+                outputType: "video",
+                dimensions: `${canvas.width}x${canvas.height}`,
                 outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.webm`,
               });
             };
           });
 
-          /* ═ Play + record ═══════════════════════════════════════ */
-          recorder.start(500); // collect chunks every 500 ms
-
+          recorder.start(500);
           try {
             await video.play();
           } catch {
-            // If play fails for any reason, stop recorder gracefully
             if (recorder.state !== "inactive") recorder.stop();
             if (drawRafId) cancelAnimationFrame(drawRafId);
             throw new Error(
@@ -396,7 +397,6 @@ export default function BatchStudioPanel() {
             );
           }
 
-          // Wait until we reach endTime (with safety timeout)
           const safetyMs = (duration + 15) * 1000;
           await new Promise((resolve) => {
             let safety;
@@ -407,20 +407,23 @@ export default function BatchStudioPanel() {
               if (recorder.state !== "inactive") recorder.stop();
               resolve();
             };
+            // Update per-file progress as video plays
             const poll = setInterval(() => {
+              const elapsed = video.currentTime - startTime;
+              const pct = Math.min(98, Math.round((elapsed / duration) * 100));
+              updateFile(item.id, { progress: pct });
               if (video.currentTime >= endTime - 0.08 || video.ended) stopAll();
-            }, 120);
+            }, 250);
             safety = setTimeout(stopAll, safetyMs);
           });
 
-          results.push(await stopPromise);
+          const result = await stopPromise;
+          results.push(result);
+          setProcessedFiles([...results]);
+          updateFile(item.id, { status: "done", progress: 100 });
         }
-        // Show this video's result immediately
-        setProcessedFiles([...results]);
-        tick();
       } catch (err) {
         console.error(`[BatchStudio] ❌ "${item.name}":`, err);
-        const existing = results.findIndex((p) => p.id === item.id);
         const errorEntry = {
           ...item,
           status: "error",
@@ -428,10 +431,11 @@ export default function BatchStudioPanel() {
           processedSize: 0,
           blob: null,
         };
+        const existing = results.findIndex((p) => p.id === item.id);
         if (existing >= 0) results[existing] = errorEntry;
         else results.push(errorEntry);
         setProcessedFiles([...results]);
-        tick();
+        updateFile(item.id, { status: "error", progress: 0 });
       }
     }
 
@@ -445,6 +449,7 @@ export default function BatchStudioPanel() {
     targetVidFormat,
     autoScale,
     vidOutputMode,
+    updateFile,
   ]);
 
   const downloadZip = async () => {
@@ -609,33 +614,16 @@ export default function BatchStudioPanel() {
 
             {/* Process Button */}
             <div className="pt-2">
-              {isProcessing ? (
-                <Card className="p-5 space-y-4 border-zinc-200 dark:border-zinc-700">
-                  <div className="w-full bg-zinc-100 dark:bg-zinc-800 rounded-full h-2 overflow-hidden">
-                    <div
-                      className="bg-zinc-950 dark:bg-zinc-100 h-full transition-all duration-300 ease-out"
-                      style={{ width: `${progress}%` }}
-                    />
-                  </div>
-                  <div className="flex items-center justify-between text-xs font-bold text-zinc-500 uppercase tracking-widest">
-                    <span className="flex items-center gap-2">
-                      <Loader2 className="animate-spin" size={14} /> Processing
-                    </span>
-                    <span>{progress}%</span>
-                  </div>
-                </Card>
-              ) : (
-                <Button
-                  variant="primary"
-                  size="lg"
-                  className="w-full"
-                  disabled={files.length === 0}
-                  onClick={processMedia}
-                  icon={Zap}
-                >
-                  Start Session
-                </Button>
-              )}
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full"
+                disabled={files.length === 0 || isProcessing}
+                onClick={processMedia}
+                icon={isProcessing ? Loader2 : Zap}
+              >
+                {isProcessing ? "Processing..." : "Start Session"}
+              </Button>
             </div>
           </div>
         </Card>
@@ -746,6 +734,42 @@ export default function BatchStudioPanel() {
                             alt=""
                           />
                         )}
+                        {/* Per-file progress bar at bottom of thumbnail */}
+                        {file.status === "processing" && (
+                          <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-200 dark:bg-zinc-900">
+                            <div
+                              className="h-full bg-zinc-950 dark:bg-white transition-all duration-300"
+                              style={{ width: `${file.progress || 0}%` }}
+                            />
+                          </div>
+                        )}
+                        {/* Status dot overlay */}
+                        {file.status === "done" && (
+                          <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm">
+                            <Check
+                              size={9}
+                              className="text-white"
+                              strokeWidth={3}
+                            />
+                          </div>
+                        )}
+                        {file.status === "error" && (
+                          <div className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 flex items-center justify-center shadow-sm">
+                            <X
+                              size={9}
+                              className="text-white"
+                              strokeWidth={3}
+                            />
+                          </div>
+                        )}
+                        {file.status === "processing" && (
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                            <Loader2
+                              size={16}
+                              className="text-white animate-spin"
+                            />
+                          </div>
+                        )}
                       </div>
                       <div className="space-y-1 overflow-hidden">
                         <p className="text-[10px] font-black text-zinc-500 uppercase tracking-widest truncate">
@@ -777,12 +801,17 @@ export default function BatchStudioPanel() {
                     </div>
 
                     {/* Arrow */}
-                    <div className="text-zinc-300 dark:text-zinc-600 shrink-0">
-                      {isProcessing && !res ? (
-                        <Loader2
-                          size={16}
-                          className="animate-spin text-zinc-900 dark:text-white"
-                        />
+                    <div className="text-zinc-300 dark:text-zinc-600 shrink-0 flex flex-col items-center gap-1">
+                      {file.status === "processing" ? (
+                        <>
+                          <Loader2
+                            size={16}
+                            className="animate-spin text-zinc-900 dark:text-white"
+                          />
+                          <span className="font-mono text-[9px] text-zinc-400">
+                            {file.progress || 0}%
+                          </span>
+                        </>
                       ) : (
                         <ChevronRight size={20} />
                       )}
