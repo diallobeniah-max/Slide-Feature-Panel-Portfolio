@@ -138,23 +138,29 @@ export default function BatchStudioPanel() {
     if (files.length === 0) return;
     setIsProcessing(true);
     setProgress(0);
+
+    // Start from existing results; only process files not yet done
     const results = [...processedFiles];
 
     for (let i = 0; i < files.length; i++) {
       const item = files[i];
-      if (processedFiles.find((p) => p.id === item.id)) continue;
+      // Skip files that already have a successful result
+      if (results.find((p) => p.id === item.id && p.status === "done"))
+        continue;
 
-      await new Promise((r) => setTimeout(r, 120));
       setProgress(Math.round((i / files.length) * 100));
+      // Small delay so the UI can repaint the progress bar
+      await new Promise((r) => setTimeout(r, 80));
 
       try {
+        /* ════════════════════ IMAGE ════════════════════ */
         if (item.type === "image") {
-          // ── IMAGE ────────────────────────────────────────────
           const img = new Image();
+          // No crossOrigin needed — object URLs are same-origin
           img.src = item.preview;
-          await new Promise((r, rej) => {
-            img.onload = r;
-            img.onerror = rej;
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = () => reject(new Error("Image load failed"));
           });
 
           const canvas = document.createElement("canvas");
@@ -163,11 +169,19 @@ export default function BatchStudioPanel() {
           canvas.height = Math.max(1, Math.round(img.height * autoScale));
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-          const dataUrl = canvas.toDataURL(targetImgFormat, quality);
-          const fetchRes = await fetch(dataUrl);
-          const blob = await fetchRes.blob();
-          const ext = targetImgFormat.split("/")[1];
+          // canvas.toBlob is the correct API — more reliable than fetch(toDataURL)
+          const blob = await new Promise((resolve, reject) => {
+            canvas.toBlob(
+              (b) =>
+                b
+                  ? resolve(b)
+                  : reject(new Error("Canvas toBlob returned null")),
+              targetImgFormat,
+              quality,
+            );
+          });
 
+          const ext = targetImgFormat.split("/")[1] || "jpg";
           results.push({
             ...item,
             processedUrl: URL.createObjectURL(blob),
@@ -178,15 +192,37 @@ export default function BatchStudioPanel() {
             dimensions: `${canvas.width}x${canvas.height}`,
             outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.${ext}`,
           });
+
+          /* ══════════════════ VIDEO / AUDIO ══════════════════ */
         } else {
-          // ── VIDEO / AUDIO ────────────────────────────────────
+          const isAudioMode = vidOutputMode === "audio";
+
           const video = document.createElement("video");
           video.src = item.preview;
+          video.muted = true; // MUST stay muted for reliable autoplay
           video.setAttribute("playsinline", "");
-          video.crossOrigin = "anonymous";
-          await new Promise((r, rej) => {
-            video.onloadedmetadata = r;
-            video.onerror = rej;
+          video.preload = "metadata";
+
+          // Load metadata
+          await new Promise((resolve, reject) => {
+            if (video.readyState >= 1) {
+              resolve();
+              return;
+            }
+            const onMeta = () => {
+              cleanup();
+              resolve();
+            };
+            const onErr = () => {
+              cleanup();
+              reject(new Error("Video load failed"));
+            };
+            const cleanup = () => {
+              video.removeEventListener("loadedmetadata", onMeta);
+              video.removeEventListener("error", onErr);
+            };
+            video.addEventListener("loadedmetadata", onMeta, { once: true });
+            video.addEventListener("error", onErr, { once: true });
           });
 
           const startTime = item.trim?.start || 0;
@@ -194,97 +230,96 @@ export default function BatchStudioPanel() {
             item.trim?.end && item.trim.end > 0
               ? item.trim.end
               : video.duration;
+          const duration = Math.max(0.5, endTime - startTime);
 
-          video.currentTime = startTime;
-          await new Promise((r) => {
-            video.onseeked = r;
-          });
+          // Seek to start (guard: onseeked may never fire if already there)
+          if (Math.abs(video.currentTime - startTime) > 0.05) {
+            video.currentTime = startTime;
+            await new Promise((resolve) => {
+              const onSeeked = () => {
+                video.removeEventListener("seeked", onSeeked);
+                resolve();
+              };
+              video.addEventListener("seeked", onSeeked, { once: true });
+              setTimeout(resolve, 2000); // safety — resolve after 2s anyway
+            });
+          }
 
-          // ── Build the recording stream ───────────────────────
+          /* ═ Build the recording stream ═════════════════════════ */
           let recordingStream;
-          let audioCtx = null;
           let canvas = null;
           let ctx = null;
           let drawRafId = null;
 
-          // Always capture audio via AudioContext so it's included
-          try {
-            audioCtx = new AudioContext();
-            const audioSrc = audioCtx.createMediaElementSource(video);
-            const audioDst = audioCtx.createMediaStreamDestination();
-            audioSrc.connect(audioDst);
-            audioSrc.connect(audioCtx.destination); // hear during processing
-
-            if (vidOutputMode === "audio") {
-              // Audio-only — just the audio stream
-              recordingStream = audioDst.stream;
-            } else {
-              // Video — canvas frames + audio tracks combined
-              canvas = document.createElement("canvas");
-              ctx = canvas.getContext("2d");
-              canvas.width = Math.max(
-                1,
-                Math.round(video.videoWidth * autoScale),
-              );
-              canvas.height = Math.max(
-                1,
-                Math.round(video.videoHeight * autoScale),
-              );
-
-              const videoStream = canvas.captureStream(30);
-              recordingStream = new MediaStream([
-                ...videoStream.getVideoTracks(),
-                ...audioDst.stream.getAudioTracks(),
-              ]);
-
-              // Draw frames to canvas
-              const drawLoop = () => {
-                if (!video.paused && !video.ended) {
-                  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                }
-                drawRafId = requestAnimationFrame(drawLoop);
-              };
-              drawLoop();
+          if (isAudioMode) {
+            // Strategy A: HTMLVideoElement.captureStream() — cleanest, no AudioContext
+            const captureStreamFn =
+              video.captureStream || video.mozCaptureStream;
+            if (captureStreamFn) {
+              const raw = captureStreamFn.call(video);
+              const audioTracks = raw.getAudioTracks();
+              if (audioTracks.length > 0) {
+                recordingStream = new MediaStream(audioTracks);
+              }
             }
-          } catch {
-            // AudioContext might fail (e.g. CORS) — fall back to canvas-only
-            audioCtx = null;
-            if (vidOutputMode !== "audio") {
-              canvas = document.createElement("canvas");
-              ctx = canvas.getContext("2d");
-              canvas.width = Math.max(
-                1,
-                Math.round(video.videoWidth * autoScale),
-              );
-              canvas.height = Math.max(
-                1,
-                Math.round(video.videoHeight * autoScale),
-              );
-              recordingStream = canvas.captureStream(30);
-              const drawLoop = () => {
-                if (!video.paused && !video.ended) {
-                  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-                }
-                drawRafId = requestAnimationFrame(drawLoop);
-              };
-              drawLoop();
+
+            // Strategy B: AudioContext fallback
+            if (!recordingStream) {
+              const AudioCtxClass =
+                window.AudioContext || window.webkitAudioContext;
+              if (AudioCtxClass) {
+                const audioCtx = new AudioCtxClass();
+                if (audioCtx.state === "suspended") await audioCtx.resume();
+                // NOTE: must unmute briefly so element routes through AudioContext
+                video.muted = false;
+                const src = audioCtx.createMediaElementSource(video);
+                const dst = audioCtx.createMediaStreamDestination();
+                src.connect(dst);
+                // Re-mute the speakers output (AudioContext still captures)
+                audioCtx.destination.channelCount = 0;
+                recordingStream = dst.stream;
+              }
             }
+
+            if (!recordingStream) {
+              throw new Error(
+                "Could not create audio stream. Try a different browser.",
+              );
+            }
+          } else {
+            // Video mode: canvas capture (always works; muted video always plays)
+            canvas = document.createElement("canvas");
+            ctx = canvas.getContext("2d");
+            canvas.width = Math.max(
+              1,
+              Math.round(video.videoWidth * autoScale),
+            );
+            canvas.height = Math.max(
+              1,
+              Math.round(video.videoHeight * autoScale),
+            );
+
+            recordingStream = canvas.captureStream(30);
+
+            // Draw loop — started AFTER play() call below
+            const drawLoop = () => {
+              ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+              if (!video.paused && !video.ended)
+                drawRafId = requestAnimationFrame(drawLoop);
+            };
+            video.addEventListener("playing", function startDraw() {
+              video.removeEventListener("playing", startDraw);
+              drawLoop();
+            });
           }
 
-          if (!recordingStream) {
-            continue;
-          }
-
-          const isAudioMode = vidOutputMode === "audio";
+          /* ═ Set up MediaRecorder ══════════════════════════════ */
           const mimeType = getSupportedMimeType(
             isAudioMode,
             isAudioMode ? "audio/webm" : "video/webm;codecs=vp8",
           );
-          if (!mimeType) {
-            if (drawRafId) cancelAnimationFrame(drawRafId);
-            if (audioCtx) audioCtx.close();
-            continue;
-          }
+          if (!mimeType)
+            throw new Error("MediaRecorder: no supported MIME type.");
 
           const recorderOptions = { mimeType };
           if (!isAudioMode) {
@@ -301,12 +336,11 @@ export default function BatchStudioPanel() {
             if (e.data.size > 0) chunks.push(e.data);
           };
 
-          const processPromise = new Promise((resolve) => {
+          // Promise that resolves when recorder.onstop fires
+          const stopPromise = new Promise((resolve) => {
             recorder.onstop = () => {
               if (drawRafId) cancelAnimationFrame(drawRafId);
-              if (audioCtx) audioCtx.close();
               const outputMime = isAudioMode ? "audio/webm" : "video/webm";
-              const ext = isAudioMode ? "webm" : "webm";
               const blob = new Blob(chunks, { type: outputMime });
               resolve({
                 ...item,
@@ -318,32 +352,57 @@ export default function BatchStudioPanel() {
                 dimensions: isAudioMode
                   ? "Audio Extract"
                   : `${canvas.width}x${canvas.height}`,
-                outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.${ext}`,
+                outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.webm`,
               });
             };
           });
 
-          // Start recording in 250 ms chunks for smoother progress
-          recorder.start(250);
-          video.muted = isAudioMode ? false : true; // unmute only for audio mode (AudioContext handles routing)
-          await video.play();
+          /* ═ Play + record ═══════════════════════════════════════ */
+          recorder.start(500); // collect chunks every 500 ms
 
-          // Poll to detect end — avoids stopping on transient pauses
+          try {
+            await video.play();
+          } catch {
+            // If play fails for any reason, stop recorder gracefully
+            if (recorder.state !== "inactive") recorder.stop();
+            if (drawRafId) cancelAnimationFrame(drawRafId);
+            throw new Error(
+              "Video playback failed. Try re-uploading the file.",
+            );
+          }
+
+          // Wait until we reach endTime (with safety timeout)
+          const safetyMs = (duration + 15) * 1000;
           await new Promise((resolve) => {
+            let safety;
+            const stopAll = () => {
+              clearInterval(poll);
+              clearTimeout(safety);
+              video.pause();
+              if (recorder.state !== "inactive") recorder.stop();
+              resolve();
+            };
             const poll = setInterval(() => {
-              if (video.currentTime >= endTime - 0.05 || video.ended) {
-                clearInterval(poll);
-                video.pause();
-                if (recorder.state !== "inactive") recorder.stop();
-                resolve();
-              }
-            }, 100);
+              if (video.currentTime >= endTime - 0.08 || video.ended) stopAll();
+            }, 120);
+            safety = setTimeout(stopAll, safetyMs);
           });
 
-          results.push(await processPromise);
+          results.push(await stopPromise);
         }
       } catch (err) {
-        console.error("[BatchStudio] Error processing", item.name, err);
+        console.error(`[BatchStudio] ❌ "${item.name}":`, err);
+        // Add an error entry so the user sees feedback instead of silence
+        const existing = results.findIndex((p) => p.id === item.id);
+        const errorEntry = {
+          ...item,
+          status: "error",
+          error: err.message,
+          processedSize: 0,
+          blob: null,
+        };
+        if (existing >= 0) results[existing] = errorEntry;
+        else results.push(errorEntry);
       }
 
       setProgress(Math.round(((i + 1) / files.length) * 100));
@@ -704,7 +763,14 @@ export default function BatchStudioPanel() {
 
                     {/* Result */}
                     <div className="flex-1 flex items-center gap-4 pl-2">
-                      {res ? (
+                      {res?.status === "error" ? (
+                        <div className="space-y-1">
+                          <Badge variant="error">Failed</Badge>
+                          <p className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400 max-w-[160px] truncate">
+                            {res.error}
+                          </p>
+                        </div>
+                      ) : res ? (
                         <>
                           <div className="w-14 h-14 bg-zinc-100 dark:bg-zinc-800 rounded-xl overflow-hidden relative shrink-0 group-hover:scale-105 transition-transform">
                             {res.outputType === "audio" ? (
