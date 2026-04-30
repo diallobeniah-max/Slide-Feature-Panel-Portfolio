@@ -388,18 +388,20 @@ export default function InstagramPanel({ initialUrl = "" }) {
                 )}
               </div>
             ) : (
-              <div className="text-center">
-                <Link
-                  className="mx-auto text-zinc-400 dark:text-zinc-600"
-                  size={48}
-                  {...iconProps}
-                />
-                <p className="mt-4 text-base font-black tracking-tight text-zinc-900 dark:text-zinc-100">
+              <div className="text-center select-none group cursor-default">
+                <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900 icon-float">
+                  <Link
+                    className="text-zinc-400 dark:text-zinc-500 icon-pop"
+                    size={26}
+                    {...iconProps}
+                  />
+                </div>
+                <p className="text-base font-black tracking-tight text-zinc-900 dark:text-zinc-100">
                   Paste a public post link
                 </p>
-                <p className="mt-1 max-w-md font-mono text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
-                  The visible carousel can load here. Browser security keeps the
-                  website from reading the iframe media URLs directly.
+                <p className="mt-2 max-w-sm font-mono text-xs font-medium leading-relaxed text-zinc-500 dark:text-zinc-400">
+                  The visible carousel loads here. Browser security prevents
+                  reading iframe URLs directly.
                 </p>
               </div>
             )}
@@ -426,7 +428,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
               <button
                 key={item.id}
                 onClick={() => toggleItem(item.id)}
-                className={`group relative overflow-hidden rounded-2xl border text-left transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-lg ${
+                className={`group relative overflow-hidden rounded-2xl border text-left card-interactive ${
                   item.selected
                     ? "border-zinc-950 shadow-md ring-2 ring-zinc-950/10 dark:border-white dark:ring-white/20"
                     : "border-zinc-200 bg-white shadow-sm hover:border-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-600"
@@ -484,18 +486,23 @@ export default function InstagramPanel({ initialUrl = "" }) {
             ))}
 
             {items.length === 0 && (
-              <div className="col-span-full grid min-h-[14rem] place-items-center rounded-3xl border-2 border-dashed border-zinc-200 bg-zinc-50 text-center dark:border-zinc-800 dark:bg-zinc-900/50">
-                <div>
-                  <ImageIcon
-                    className="mx-auto text-zinc-300 dark:text-zinc-700"
-                    size={40}
-                    {...iconProps}
-                  />
-                  <p className="mt-4 text-sm font-black tracking-tight text-zinc-900 dark:text-zinc-100">
+              <div
+                className="col-span-full grid min-h-[14rem] place-items-center rounded-3xl border-2 border-dashed border-zinc-200 bg-zinc-50 text-center dark:border-zinc-800 dark:bg-zinc-900/50 group dropzone-interactive cursor-pointer"
+                onClick={() => pickerRef.current?.click()}
+              >
+                <div className="select-none">
+                  <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900 icon-float">
+                    <ImageIcon
+                      className="text-zinc-400 dark:text-zinc-500 icon-pop"
+                      size={24}
+                      {...iconProps}
+                    />
+                  </div>
+                  <p className="text-sm font-black tracking-tight text-zinc-900 dark:text-zinc-100">
                     No selected media yet
                   </p>
                   <p className="mt-1 font-mono text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                    Pick saved carousel files or paste direct media URLs.
+                    Click to pick files or paste direct URLs above.
                   </p>
                 </div>
               </div>

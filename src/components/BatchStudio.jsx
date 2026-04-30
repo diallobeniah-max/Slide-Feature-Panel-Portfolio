@@ -607,12 +607,12 @@ export default function BatchStudioPanel() {
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current.click()}
-            className={`h-[400px] border-2 border-dashed rounded-[32px] flex flex-col items-center justify-center space-y-6 transition-all cursor-pointer group ${isDragging ? "border-zinc-950 bg-zinc-50 dark:border-white dark:bg-zinc-900/50" : "border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/30 hover:border-zinc-400 dark:hover:border-zinc-600"}`}
+            className={`h-[400px] border-2 border-dashed rounded-[32px] flex flex-col items-center justify-center space-y-6 cursor-pointer group dropzone-interactive ${isDragging ? "border-zinc-950 bg-zinc-50 dark:border-white dark:bg-zinc-900/50" : "border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/30 hover:border-zinc-400 dark:hover:border-zinc-600"}`}
           >
             <div
-              className={`w-20 h-20 rounded-2xl flex items-center justify-center transition-transform duration-500 ${isDragging ? "scale-110 bg-zinc-950 text-white dark:bg-white dark:text-zinc-950" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800 group-hover:scale-105"}`}
+              className={`w-20 h-20 rounded-2xl flex items-center justify-center ${isDragging ? "scale-110 bg-zinc-950 text-white dark:bg-white dark:text-zinc-950" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"}`}
             >
-              <Upload size={36} />
+              <Upload size={36} className="icon-pop icon-float" />
             </div>
             <div className="text-center space-y-2">
               <p className="text-xl font-black tracking-tight uppercase text-zinc-900 dark:text-zinc-100">
@@ -638,7 +638,7 @@ export default function BatchStudioPanel() {
                 <Card
                   key={file.id}
                   onClick={() => setPreviewId(file.id)}
-                  className="p-4 flex items-center gap-4 md:gap-6 group cursor-pointer hover:border-zinc-300 dark:hover:border-zinc-700 transition-all"
+                  className="p-4 flex items-center gap-4 md:gap-6 group card-interactive hover:border-zinc-300 dark:hover:border-zinc-700"
                 >
                   <div className="flex-1 flex items-center gap-6">
                     {/* Source */}

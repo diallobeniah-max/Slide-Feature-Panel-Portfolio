@@ -429,7 +429,7 @@ export default function SlideSlicerPanel() {
           </div>
         </Card>
 
-        <div className="order-3 flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-4 text-xs font-bold shadow-sm transition-all duration-300 ease-out hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100">
+        <div className="order-3 flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-4 text-xs font-bold dark:border-zinc-800 dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 card-hover">
           <span
             className={`h-2.5 w-2.5 rounded-full ${
               status.type === "loading"
@@ -445,13 +445,18 @@ export default function SlideSlicerPanel() {
 
       <section className="grid content-start gap-5">
         <Card
-          className={`grid aspect-video place-items-center overflow-hidden bg-zinc-100 dark:bg-zinc-950/50 border-zinc-200 dark:border-zinc-800 ${
-            sourceImage ? "cursor-grab active:cursor-grabbing" : ""
+          className={`grid aspect-video place-items-center overflow-hidden bg-zinc-100 dark:bg-zinc-950/50 border-zinc-200 dark:border-zinc-800 group ${
+            sourceImage
+              ? "cursor-grab active:cursor-grabbing"
+              : "dropzone-interactive cursor-pointer"
           }`}
           onMouseDown={startDrag}
           onMouseMove={moveDrag}
           onMouseUp={() => setIsDragging(false)}
           onMouseLeave={() => setIsDragging(false)}
+          onClick={
+            !sourceImage ? () => fileInputRef.current?.click() : undefined
+          }
         >
           {sourceImage ? (
             <div
@@ -482,18 +487,22 @@ export default function SlideSlicerPanel() {
               </div>
             </div>
           ) : (
-            <div className="text-center">
-              <ImageIcon
-                className="mx-auto text-zinc-400 dark:text-zinc-600"
-                size={48}
-                {...iconProps}
-              />
-              <p className="mt-4 text-base font-black tracking-tight text-zinc-900 dark:text-zinc-100">
+            <div className="text-center select-none">
+              <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900 icon-float">
+                <ImageIcon
+                  className="text-zinc-400 dark:text-zinc-500 icon-pop"
+                  size={28}
+                  {...iconProps}
+                />
+              </div>
+              <p className="text-base font-black tracking-tight text-zinc-900 dark:text-zinc-100">
                 No source image
               </p>
-              <p className="mt-1 font-mono text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                Import a wide carousel or tall design, then slice it into
-                slides.
+              <p className="mt-2 font-mono text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                Click or drag to import a carousel design.
+              </p>
+              <p className="mt-3 text-[10px] font-black uppercase tracking-widest text-zinc-400 dark:text-zinc-600 group-hover:text-zinc-600 dark:group-hover:text-zinc-400 transition-colors">
+                PNG · JPG · WEBP
               </p>
             </div>
           )}
@@ -520,7 +529,7 @@ export default function SlideSlicerPanel() {
                 <button
                   key={slice}
                   onClick={() => setExpandedSlice({ src: slice, index })}
-                  className="group relative aspect-square overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 text-left shadow-sm transition-all duration-300 ease-out hover:-translate-y-1 hover:border-zinc-400 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-600"
+                  className="group relative aspect-square overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 text-left shadow-sm card-interactive dark:border-zinc-800 dark:bg-zinc-900"
                 >
                   <img
                     src={slice}
