@@ -9,6 +9,7 @@ import {
   FileArchive,
   Trash2,
   X,
+  Sparkles,
 } from "lucide-react";
 import JSZip from "jszip";
 import { downloadBlob } from "../utils/media.js";
