@@ -141,60 +141,85 @@ export default function BatchStudioPanel() {
 
     // Start from existing results; only process files not yet done
     const results = [...processedFiles];
+    const pending = files.filter(
+      (f) => !results.find((p) => p.id === f.id && p.status === "done"),
+    );
+    if (pending.length === 0) {
+      setIsProcessing(false);
+      return;
+    }
 
-    for (let i = 0; i < files.length; i++) {
-      const item = files[i];
-      // Skip files that already have a successful result
-      if (results.find((p) => p.id === item.id && p.status === "done"))
-        continue;
+    // Shared progress counter
+    let done = 0;
+    const tick = () => {
+      done++;
+      setProgress(Math.round((done / pending.length) * 100));
+    };
 
-      setProgress(Math.round((i / files.length) * 100));
-      // Small delay so the UI can repaint the progress bar
-      await new Promise((r) => setTimeout(r, 80));
+    // ── Images: process ALL in parallel (canvas is fast, no real-time constraint)
+    const imageItems = pending.filter((f) => f.type === "image");
+    const mediaItems = pending.filter((f) => f.type !== "image");
 
+    if (imageItems.length > 0) {
+      const imageResults = await Promise.all(
+        imageItems.map(async (item) => {
+          try {
+            const img = new Image();
+            img.src = item.preview;
+            await new Promise((resolve, reject) => {
+              img.onload = resolve;
+              img.onerror = () => reject(new Error("Image load failed"));
+            });
+
+            const canvas = document.createElement("canvas");
+            const ctx = canvas.getContext("2d");
+            canvas.width = Math.max(1, Math.round(img.width * autoScale));
+            canvas.height = Math.max(1, Math.round(img.height * autoScale));
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+            const blob = await new Promise((resolve, reject) => {
+              canvas.toBlob(
+                (b) =>
+                  b ? resolve(b) : reject(new Error("toBlob returned null")),
+                targetImgFormat,
+                quality,
+              );
+            });
+
+            tick();
+            const ext = targetImgFormat.split("/")[1] || "jpg";
+            return {
+              ...item,
+              processedUrl: URL.createObjectURL(blob),
+              processedSize: blob.size,
+              blob,
+              status: "done",
+              outputType: "image",
+              dimensions: `${canvas.width}x${canvas.height}`,
+              outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.${ext}`,
+            };
+          } catch (err) {
+            tick();
+            return {
+              ...item,
+              status: "error",
+              error: err.message,
+              processedSize: 0,
+              blob: null,
+            };
+          }
+        }),
+      );
+      results.push(...imageResults);
+      // Show image results immediately while videos queue up
+      setProcessedFiles([...results]);
+    }
+
+    // ── Videos/audio: must be sequential (real-time MediaRecorder constraint)
+    for (const item of mediaItems) {
       try {
-        /* ════════════════════ IMAGE ════════════════════ */
-        if (item.type === "image") {
-          const img = new Image();
-          // No crossOrigin needed — object URLs are same-origin
-          img.src = item.preview;
-          await new Promise((resolve, reject) => {
-            img.onload = resolve;
-            img.onerror = () => reject(new Error("Image load failed"));
-          });
-
-          const canvas = document.createElement("canvas");
-          const ctx = canvas.getContext("2d");
-          canvas.width = Math.max(1, Math.round(img.width * autoScale));
-          canvas.height = Math.max(1, Math.round(img.height * autoScale));
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-          // canvas.toBlob is the correct API — more reliable than fetch(toDataURL)
-          const blob = await new Promise((resolve, reject) => {
-            canvas.toBlob(
-              (b) =>
-                b
-                  ? resolve(b)
-                  : reject(new Error("Canvas toBlob returned null")),
-              targetImgFormat,
-              quality,
-            );
-          });
-
-          const ext = targetImgFormat.split("/")[1] || "jpg";
-          results.push({
-            ...item,
-            processedUrl: URL.createObjectURL(blob),
-            processedSize: blob.size,
-            blob,
-            status: "done",
-            outputType: "image",
-            dimensions: `${canvas.width}x${canvas.height}`,
-            outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.${ext}`,
-          });
-
-          /* ══════════════════ VIDEO / AUDIO ══════════════════ */
-        } else {
+        /* ══════════════════ VIDEO / AUDIO ══════════════════ */
+        {
           const isAudioMode = vidOutputMode === "audio";
 
           const video = document.createElement("video");
@@ -390,9 +415,11 @@ export default function BatchStudioPanel() {
 
           results.push(await stopPromise);
         }
+        // Show this video's result immediately
+        setProcessedFiles([...results]);
+        tick();
       } catch (err) {
         console.error(`[BatchStudio] ❌ "${item.name}":`, err);
-        // Add an error entry so the user sees feedback instead of silence
         const existing = results.findIndex((p) => p.id === item.id);
         const errorEntry = {
           ...item,
@@ -403,9 +430,9 @@ export default function BatchStudioPanel() {
         };
         if (existing >= 0) results[existing] = errorEntry;
         else results.push(errorEntry);
+        setProcessedFiles([...results]);
+        tick();
       }
-
-      setProgress(Math.round(((i + 1) / files.length) * 100));
     }
 
     setProcessedFiles(results);
