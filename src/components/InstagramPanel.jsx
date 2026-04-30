@@ -48,136 +48,197 @@ function getShortcode(url) {
   }
 }
 
-/* ── Auto-scrape carousel images via CORS proxy ──────────────────── */
+/* ── Auto-scrape carousel images ─────────────────────────────────── */
 const PROXIES = [
   "https://corsproxy.io/?url=",
   "https://api.allorigins.win/raw?url=",
 ];
 
-async function scrapeCarousel(postUrl) {
-  let html = null;
+/** Fetch a URL through multiple CORS proxies. Returns HTML string or null. */
+async function proxyFetch(targetUrl) {
   for (const proxy of PROXIES) {
     try {
-      const res = await fetch(proxy + encodeURIComponent(postUrl), {
-        headers: { Accept: "text/html,application/xhtml+xml" },
-        signal: AbortSignal.timeout(10_000),
+      const res = await fetch(proxy + encodeURIComponent(targetUrl), {
+        headers: {
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en-US,en;q=0.9",
+        },
+        signal: AbortSignal.timeout(12_000),
       });
-      if (res.ok) {
-        html = await res.text();
-        break;
-      }
+      if (res.ok) return res.text();
     } catch {
-      /* try next proxy */
+      /* try next */
     }
   }
-  if (!html) return null;
+  return null;
+}
 
+/**
+ * Extract all Instagram CDN image/video URLs from an HTML string.
+ * Works on both the embed URL (server-rendered <img> tags) and the main page.
+ */
+function extractCdnUrls(html) {
+  const seen = new Set();
   const items = [];
 
-  // 1. Try to find the JSON blob Instagram embeds in the page
-  //    Matches: window.__additionalDataLoaded('extra', {...});
-  const extraMatch = html.match(
-    /window\.__additionalDataLoaded\('extra',\s*(\{[\s\S]+?\})\);/,
+  // Pattern for Instagram CDN hostnames
+  const CDN = "(?:cdninstagram\.com|fbcdn\.net)";
+
+  // ── Videos: .mp4 from CDN ───────────────────────────────────────
+  const videoRe = new RegExp(
+    `(https://[\\w.-]*${CDN}/[^"'\\s<>]+\.mp4[^"'\\s<>]*)`,
+    "g",
   );
-  if (extraMatch) {
-    try {
-      const data = JSON.parse(extraMatch[1]);
-      const media = data?.items?.[0] || data?.media || data;
-      const carouselNodes =
-        media?.carousel_media || (media?.media_type ? [media] : null);
-      if (carouselNodes?.length) {
-        carouselNodes.forEach((node, i) => {
-          if (node.media_type === 2 || node.video_versions?.length) {
-            // Video
-            const v = (node.video_versions || [])[0];
-            if (v)
-              items.push({
-                id: crypto.randomUUID(),
-                type: "video",
-                url: v.url.replace(/&amp;/g, "&"),
-                name: `slide_${i + 1}.mp4`,
-                selected: true,
-              });
-          } else {
-            const c = (node.image_versions2?.candidates || [])[0];
-            if (c)
-              items.push({
-                id: crypto.randomUUID(),
-                type: "image",
-                url: c.url.replace(/&amp;/g, "&"),
-                name: `slide_${i + 1}.jpg`,
-                selected: true,
-              });
-          }
-        });
-        if (items.length > 0) return items;
-      }
-    } catch {
-      /* fall through */
-    }
-  }
-
-  // 2. Try JSON-LD schema
-  const jsonLdMatches = [
-    ...html.matchAll(
-      /<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]+?)<\/script>/gi,
-    ),
-  ];
-  for (const m of jsonLdMatches) {
-    try {
-      const data = JSON.parse(m[1]);
-      const images =
-        data?.image || data?.["@graph"]?.flatMap?.((n) => n.image || []) || [];
-      (Array.isArray(images) ? images : [images]).forEach((img, i) => {
-        const url = typeof img === "string" ? img : img?.url || img?.contentUrl;
-        if (url)
-          items.push({
-            id: crypto.randomUUID(),
-            type: "image",
-            url,
-            name: `slide_${i + 1}.jpg`,
-            selected: true,
-          });
+  for (const m of html.matchAll(videoRe)) {
+    const url = m[1].replace(/&amp;/g, "&");
+    if (!seen.has(url)) {
+      seen.add(url);
+      items.push({
+        id: crypto.randomUUID(),
+        type: "video",
+        url,
+        name: `slide_${items.length + 1}.mp4`,
+        selected: true,
       });
-      if (items.length) return items;
-    } catch {
-      /* continue */
     }
   }
 
-  // 3. Fallback — og:image + og:video meta tags
-  const videoTags = [
-    ...html.matchAll(
-      /property="og:video(?::secure_url)?"[^>]+content="([^"]+)"/g,
-    ),
-  ];
-  const imageTags = [
-    ...html.matchAll(/property="og:image"[^>]+content="([^"]+)"/g),
-  ];
-
-  videoTags.forEach((m, i) => {
+  // ── Images: CDN URLs that look like post images ─────────────────
+  // Instagram post images contain /v/t51. or /v/t50. in the path
+  const imgRe = new RegExp(
+    `(https://[\\w.-]*${CDN}/v/[^"'\\s<>]+\.(?:jpg|jpeg|webp)[^"'\\s<>]*)`,
+    "g",
+  );
+  for (const m of html.matchAll(imgRe)) {
     const url = m[1].replace(/&amp;/g, "&");
-    items.push({
-      id: crypto.randomUUID(),
-      type: "video",
-      url,
-      name: `slide_${i + 1}.mp4`,
-      selected: true,
-    });
-  });
-  imageTags.forEach((m, i) => {
-    const url = m[1].replace(/&amp;/g, "&");
-    if (!items.find((x) => x.url === url))
+    // Skip profile pics (28x28, 56x56, 150x150)
+    if (/\/(?:s28x28|s56x56|s150x150|p28x28|p56x56|p150x150)\//.test(url))
+      continue;
+    if (!seen.has(url)) {
+      seen.add(url);
       items.push({
         id: crypto.randomUUID(),
         type: "image",
         url,
-        name: `slide_${i + 1}.jpg`,
+        name: `slide_${items.length + 1}.jpg`,
         selected: true,
       });
-  });
+    }
+  }
 
-  return items.length > 0 ? items : null;
+  // ── JSON blobs: window.__additionalDataLoaded ────────────────────
+  const extraMatch = html.match(
+    /window\.__additionalDataLoaded\(['"]extra['"],\s*(\{[\s\S]+?\})\s*\);/,
+  );
+  if (extraMatch && !items.length) {
+    try {
+      const data = JSON.parse(extraMatch[1]);
+      const media = data?.items?.[0] || data?.media || data;
+      const nodes =
+        media?.carousel_media || (media?.media_type ? [media] : null);
+      nodes?.forEach((node, i) => {
+        if (node.media_type === 2 || node.video_versions?.length) {
+          const v = (node.video_versions || [])[0];
+          if (v && !seen.has(v.url)) {
+            seen.add(v.url);
+            items.push({
+              id: crypto.randomUUID(),
+              type: "video",
+              url: v.url.replace(/&amp;/g, "&"),
+              name: `slide_${i + 1}.mp4`,
+              selected: true,
+            });
+          }
+        } else {
+          const c = (node.image_versions2?.candidates || [])[0];
+          if (c && !seen.has(c.url)) {
+            seen.add(c.url);
+            items.push({
+              id: crypto.randomUUID(),
+              type: "image",
+              url: c.url.replace(/&amp;/g, "&"),
+              name: `slide_${i + 1}.jpg`,
+              selected: true,
+            });
+          }
+        }
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  // ── og:image / og:video meta tags (last resort) ──────────────────
+  if (!items.length) {
+    for (const m of html.matchAll(
+      /content="(https:\/\/[^"]*(?:cdninstagram\.com|fbcdn\.net)[^"]+)"/g,
+    )) {
+      const url = m[1].replace(/&amp;/g, "&");
+      if (!seen.has(url) && !/\/s150x150\//.test(url)) {
+        seen.add(url);
+        const type = url.includes(".mp4") ? "video" : "image";
+        const ext = type === "video" ? "mp4" : "jpg";
+        items.push({
+          id: crypto.randomUUID(),
+          type,
+          url,
+          name: `slide_${items.length + 1}.${ext}`,
+          selected: true,
+        });
+      }
+    }
+  }
+
+  return items;
+}
+
+async function scrapeCarousel(postUrl) {
+  const shortcode = getShortcode(postUrl);
+  if (!shortcode) return null;
+
+  /* Strategy 1 ── The embed URL is server-rendered with real <img src="…">
+     tags pointing directly at CDN. This is the most reliable source. */
+  const embedUrl = `https://www.instagram.com/p/${shortcode}/embed/captioned/`;
+  const embedHtml = await proxyFetch(embedUrl);
+  if (embedHtml) {
+    const items = extractCdnUrls(embedHtml);
+    if (items.length > 0) return items;
+  }
+
+  /* Strategy 2 ── Main page HTML (SPA, harder to parse but worth trying) */
+  const pageHtml = await proxyFetch(postUrl);
+  if (pageHtml) {
+    const items = extractCdnUrls(pageHtml);
+    if (items.length > 0) return items;
+  }
+
+  /* Strategy 3 ── Instagram oEmbed API (no auth needed, public endpoint)
+     Only returns the first image/thumbnail but better than nothing. */
+  try {
+    const oembed = await fetch(
+      `https://api.instagram.com/oembed/?url=${encodeURIComponent(postUrl)}&format=json`,
+      { signal: AbortSignal.timeout(6_000) },
+    );
+    if (oembed.ok) {
+      const data = await oembed.json();
+      if (data.thumbnail_url) {
+        return [
+          {
+            id: crypto.randomUUID(),
+            type: "image",
+            url: data.thumbnail_url,
+            name: "slide_1.jpg",
+            selected: true,
+          },
+        ];
+      }
+    }
+  } catch {
+    /* offline or blocked */
+  }
+
+  return null;
 }
 
 /* ── Instagram embed preview ─────────────────────────────────────── */
@@ -329,12 +390,12 @@ export default function InstagramPanel({ initialUrl = "" }) {
       } else {
         setScanStatus("failed");
         setStatusMsg(
-          "Auto-scan couldn't extract media (Instagram may have blocked it). View the embed below, save the images, then pick the files.",
+          'Instagram blocked the scan. The embed below still shows the carousel — scroll through it, then long-press each image in Instagram to save it. After saving, use the "Pick Saved Files" button to load them here.',
         );
       }
     } catch {
       setScanStatus("failed");
-      setStatusMsg("Network error. Check your connection and try again.");
+      setStatusMsg("Network error — check your connection and try again.");
     } finally {
       setScanning(false);
     }
@@ -501,7 +562,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
           {/* Manual file pick fallback */}
           <div className="pt-1 border-t border-zinc-100 dark:border-zinc-800">
             <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
-              Manual Fallback
+              Import Saved Files
             </p>
             <Button
               icon={Download}
@@ -509,7 +570,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
               className="w-full"
               onClick={() => pickerRef.current?.click()}
             >
-              Pick Saved Files from Disk
+              Add Files from Disk
             </Button>
             <input
               ref={pickerRef}
@@ -522,10 +583,28 @@ export default function InstagramPanel({ initialUrl = "" }) {
                 e.target.value = "";
               }}
             />
-            <p className="mt-2 text-[10px] text-zinc-400 font-medium leading-relaxed">
-              If auto-scan fails, open the post in Instagram, long-press to save
-              each image, then pick them here.
-            </p>
+            <div className="mt-3 rounded-xl bg-zinc-50 dark:bg-zinc-800/50 p-3 space-y-1.5">
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                How to save from Instagram
+              </p>
+              <p className="text-[10px] text-zinc-400 font-medium leading-relaxed">
+                1. Open the post in Instagram
+                <br />
+                2. Tap the three-dot menu ⋯ →{" "}
+                <strong className="text-zinc-600 dark:text-zinc-300">
+                  Save
+                </strong>{" "}
+                or long-press each image
+                <br />
+                3. Find the saved file in Photos / Downloads
+                <br />
+                4. Click{" "}
+                <strong className="text-zinc-600 dark:text-zinc-300">
+                  Add Files from Disk
+                </strong>{" "}
+                above
+              </p>
+            </div>
           </div>
         </Card>
 
