@@ -143,6 +143,15 @@ export default function SlideSlicerPanel() {
     const bundle = await zip.generateAsync({ type: "blob" });
     downloadBlob(bundle, `${prefix}_Slides.zip`);
     setStatus({ type: "success", message: "Slide ZIP exported." });
+    window.dispatchEvent(
+      new CustomEvent("studio-notify", {
+        detail: {
+          title: "Slides Exported",
+          message: `${generatedSlices.length} slides saved as ZIP.`,
+          type: "success",
+        },
+      }),
+    );
   }
 
   function savePreset() {

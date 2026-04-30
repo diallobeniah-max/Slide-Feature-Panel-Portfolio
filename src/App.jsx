@@ -1,19 +1,43 @@
-import { Layers, Settings, X, Moon, Sun, Type, Monitor } from "lucide-react";
-import { useEffect, useState, useRef } from "react";
+import {
+  Layers,
+  Settings,
+  X,
+  Moon,
+  Sun,
+  Type,
+  Monitor,
+  Bell,
+  Volume2,
+} from "lucide-react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import BatchStudioPanel from "./components/BatchStudio.jsx";
 import SlideSlicerPanel from "./components/SlideSlicerPanel.jsx";
 import InstagramPanel from "./components/InstagramPanel.jsx";
+import GridBuilder from "./components/GridBuilder.jsx";
+import SpellChecker from "./components/SpellChecker.jsx";
+import Notifications, { playChime } from "./components/Notifications.jsx";
 
 const iconProps = { strokeWidth: 1.75 };
 
 const WORKSPACE_TABS = [
   { value: "slicer", label: "Slide Slicer" },
+  { value: "grid", label: "Grid Builder" },
+  { value: "spellcheck", label: "Spell Check" },
   { value: "instagram", label: "Carousel Capture" },
   { value: "batch", label: "Batch Studio" },
 ];
 
 /* ─── Settings Popover ─────────────────────────────────────────── */
-function SettingsPopover({ fontSize, setFontSize, isDark, setIsDark }) {
+function SettingsPopover({
+  fontSize,
+  setFontSize,
+  isDark,
+  setIsDark,
+  soundEnabled,
+  setSoundEnabled,
+  notifsEnabled,
+  setNotifsEnabled,
+}) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -131,6 +155,43 @@ function SettingsPopover({ fontSize, setFontSize, isDark, setIsDark }) {
               </div>
             </div>
 
+            {/* Sound + Notification toggles */}
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                {
+                  label: "Sound",
+                  icon: <Volume2 size={14} />,
+                  val: soundEnabled,
+                  set: setSoundEnabled,
+                },
+                {
+                  label: "Alerts",
+                  icon: <Bell size={14} />,
+                  val: notifsEnabled,
+                  set: setNotifsEnabled,
+                },
+              ].map(({ label, icon, val, set }) => (
+                <button
+                  key={label}
+                  onClick={() => set((v) => !v)}
+                  className={`flex items-center justify-between rounded-2xl border px-3 py-2.5 transition-all ${
+                    val
+                      ? "border-zinc-950 bg-zinc-950 text-white dark:border-white dark:bg-white dark:text-zinc-950"
+                      : "border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+                  }`}
+                >
+                  <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest">
+                    {icon} {label}
+                  </span>
+                  <span
+                    className={`text-[9px] font-black ${val ? "opacity-60" : "opacity-40"}`}
+                  >
+                    {val ? "ON" : "OFF"}
+                  </span>
+                </button>
+              ))}
+            </div>
+
             {/* Dark mode toggle */}
             <button
               onClick={() => setIsDark((v) => !v)}
@@ -180,6 +241,31 @@ export default function App() {
   const [prevWorkspace, setPrevWorkspace] = useState(workspace);
   const [animKey, setAnimKey] = useState(0);
 
+  // Notifications
+  const [notifications, setNotifications] = useState([]);
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [notifsEnabled, setNotifsEnabled] = useState(true);
+
+  const dismissNotif = useCallback((id) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+  }, []);
+
+  // Global studio-notify event handler
+  useEffect(() => {
+    const handler = (e) => {
+      const { title, message, type = "success" } = e.detail || {};
+      if (soundEnabled) playChime(type);
+      if (!notifsEnabled) return;
+      const id = crypto.randomUUID();
+      setNotifications((prev) => [
+        ...prev.slice(-4),
+        { id, title, message, type },
+      ]);
+    };
+    window.addEventListener("studio-notify", handler);
+    return () => window.removeEventListener("studio-notify", handler);
+  }, [soundEnabled, notifsEnabled]);
+
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
   }, [isDark]);
@@ -210,6 +296,10 @@ export default function App() {
               setFontSize={setFontSize}
               isDark={isDark}
               setIsDark={setIsDark}
+              soundEnabled={soundEnabled}
+              setSoundEnabled={setSoundEnabled}
+              notifsEnabled={notifsEnabled}
+              setNotifsEnabled={setNotifsEnabled}
             />
             <div>
               <div className="flex items-center gap-2">
@@ -275,10 +365,17 @@ export default function App() {
           <InstagramPanel initialUrl={initialIgUrl} />
         ) : workspace === "batch" ? (
           <BatchStudioPanel />
+        ) : workspace === "grid" ? (
+          <GridBuilder />
+        ) : workspace === "spellcheck" ? (
+          <SpellChecker />
         ) : (
           <SlideSlicerPanel />
         )}
       </main>
+
+      {/* ── Global notifications ──────────────────────────────── */}
+      <Notifications notifications={notifications} onDismiss={dismissNotif} />
     </div>
   );
 }
