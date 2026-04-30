@@ -16,6 +16,10 @@ body {
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
+.dark body,
+body:has(html.dark) {
+    background: #09090b;
+}
 
 button,
 input,

@@ -147,101 +147,203 @@ export default function BatchStudioPanel() {
       await new Promise((r) => setTimeout(r, 120));
       setProgress(Math.round((i / files.length) * 100));
 
-      if (item.type === "image") {
-        const img = new Image();
-        img.src = item.preview;
-        await new Promise((r) => {
-          img.onload = r;
-        });
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        canvas.width = img.width * autoScale;
-        canvas.height = img.height * autoScale;
-        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        const dataUrl = canvas.toDataURL(targetImgFormat, quality);
-        const res = await fetch(dataUrl);
-        const blob = await res.blob();
-        results.push({
-          ...item,
-          processedUrl: dataUrl,
-          processedSize: blob.size,
-          blob,
-          status: "done",
-          dimensions: `${Math.round(canvas.width)}x${Math.round(canvas.height)}`,
-        });
-      } else {
-        const video = document.createElement("video");
-        video.src = item.preview;
-        video.muted = true;
-        video.setAttribute("playsinline", "");
-        await new Promise((r) => {
-          video.onloadedmetadata = r;
-        });
+      try {
+        if (item.type === "image") {
+          // ── IMAGE ────────────────────────────────────────────
+          const img = new Image();
+          img.src = item.preview;
+          await new Promise((r, rej) => {
+            img.onload = r;
+            img.onerror = rej;
+          });
 
-        const canvas = document.createElement("canvas");
-        const ctx = canvas.getContext("2d");
-        canvas.width = video.videoWidth * autoScale;
-        canvas.height = video.videoHeight * autoScale;
+          const canvas = document.createElement("canvas");
+          const ctx = canvas.getContext("2d");
+          canvas.width = Math.max(1, Math.round(img.width * autoScale));
+          canvas.height = Math.max(1, Math.round(img.height * autoScale));
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-        const startTime = item.trim?.start || 0;
-        const endTime =
-          item.trim?.end && item.trim.end > 0 ? item.trim.end : video.duration;
+          const dataUrl = canvas.toDataURL(targetImgFormat, quality);
+          const fetchRes = await fetch(dataUrl);
+          const blob = await fetchRes.blob();
+          const ext = targetImgFormat.split("/")[1];
 
-        video.currentTime = startTime;
-        await new Promise((r) => {
-          video.onseeked = r;
-        });
+          results.push({
+            ...item,
+            processedUrl: URL.createObjectURL(blob),
+            processedSize: blob.size,
+            blob,
+            status: "done",
+            outputType: "image",
+            dimensions: `${canvas.width}x${canvas.height}`,
+            outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.${ext}`,
+          });
+        } else {
+          // ── VIDEO / AUDIO ────────────────────────────────────
+          const video = document.createElement("video");
+          video.src = item.preview;
+          video.setAttribute("playsinline", "");
+          video.crossOrigin = "anonymous";
+          await new Promise((r, rej) => {
+            video.onloadedmetadata = r;
+            video.onerror = rej;
+          });
 
-        const stream = canvas.captureStream(30);
-        const mimeType = getSupportedMimeType(
-          vidOutputMode === "audio",
-          vidOutputMode === "audio" ? "audio/webm" : "video/webm;codecs=vp8",
-        );
-        if (!mimeType) continue;
+          const startTime = item.trim?.start || 0;
+          const endTime =
+            item.trim?.end && item.trim.end > 0
+              ? item.trim.end
+              : video.duration;
 
-        const videoBitrate = Math.max(500000, quality * 25000000);
-        const recorder = new MediaRecorder(stream, {
-          mimeType,
-          videoBitsPerSecond: vidOutputMode === "audio" ? 0 : videoBitrate,
-          audioBitsPerSecond: quality * 320000,
-        });
+          video.currentTime = startTime;
+          await new Promise((r) => {
+            video.onseeked = r;
+          });
 
-        const chunks = [];
-        recorder.ondataavailable = (e) => chunks.push(e.data);
-        const processPromise = new Promise((resolve) => {
-          recorder.onstop = () => {
-            const finalType =
-              vidOutputMode === "audio" ? "audio/mpeg" : targetVidFormat;
-            const blob = new Blob(chunks, { type: finalType });
-            resolve({
-              ...item,
-              processedUrl: URL.createObjectURL(blob),
-              processedSize: blob.size,
-              blob,
-              status: "done",
-              outputType: vidOutputMode,
-              dimensions:
-                vidOutputMode === "audio"
-                  ? "Studio Audio"
-                  : `${Math.round(canvas.width)}x${Math.round(canvas.height)}`,
-            });
-          };
-        });
+          // ── Build the recording stream ───────────────────────
+          let recordingStream;
+          let audioCtx = null;
+          let canvas = null;
+          let ctx = null;
+          let drawRafId = null;
 
-        recorder.start();
-        await video.play();
+          // Always capture audio via AudioContext so it's included
+          try {
+            audioCtx = new AudioContext();
+            const audioSrc = audioCtx.createMediaElementSource(video);
+            const audioDst = audioCtx.createMediaStreamDestination();
+            audioSrc.connect(audioDst);
+            audioSrc.connect(audioCtx.destination); // hear during processing
 
-        const drawFrame = () => {
-          if (video.currentTime >= endTime || video.ended || video.paused) {
-            if (recorder.state !== "inactive") recorder.stop();
-            return;
+            if (vidOutputMode === "audio") {
+              // Audio-only — just the audio stream
+              recordingStream = audioDst.stream;
+            } else {
+              // Video — canvas frames + audio tracks combined
+              canvas = document.createElement("canvas");
+              ctx = canvas.getContext("2d");
+              canvas.width = Math.max(
+                1,
+                Math.round(video.videoWidth * autoScale),
+              );
+              canvas.height = Math.max(
+                1,
+                Math.round(video.videoHeight * autoScale),
+              );
+
+              const videoStream = canvas.captureStream(30);
+              recordingStream = new MediaStream([
+                ...videoStream.getVideoTracks(),
+                ...audioDst.stream.getAudioTracks(),
+              ]);
+
+              // Draw frames to canvas
+              const drawLoop = () => {
+                if (!video.paused && !video.ended) {
+                  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                }
+                drawRafId = requestAnimationFrame(drawLoop);
+              };
+              drawLoop();
+            }
+          } catch {
+            // AudioContext might fail (e.g. CORS) — fall back to canvas-only
+            audioCtx = null;
+            if (vidOutputMode !== "audio") {
+              canvas = document.createElement("canvas");
+              ctx = canvas.getContext("2d");
+              canvas.width = Math.max(
+                1,
+                Math.round(video.videoWidth * autoScale),
+              );
+              canvas.height = Math.max(
+                1,
+                Math.round(video.videoHeight * autoScale),
+              );
+              recordingStream = canvas.captureStream(30);
+              const drawLoop = () => {
+                if (!video.paused && !video.ended) {
+                  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                }
+                drawRafId = requestAnimationFrame(drawLoop);
+              };
+              drawLoop();
+            }
           }
-          if (vidOutputMode === "video")
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          requestAnimationFrame(drawFrame);
-        };
-        drawFrame();
-        results.push(await processPromise);
+
+          if (!recordingStream) {
+            continue;
+          }
+
+          const isAudioMode = vidOutputMode === "audio";
+          const mimeType = getSupportedMimeType(
+            isAudioMode,
+            isAudioMode ? "audio/webm" : "video/webm;codecs=vp8",
+          );
+          if (!mimeType) {
+            if (drawRafId) cancelAnimationFrame(drawRafId);
+            if (audioCtx) audioCtx.close();
+            continue;
+          }
+
+          const recorderOptions = { mimeType };
+          if (!isAudioMode) {
+            recorderOptions.videoBitsPerSecond = Math.max(
+              500_000,
+              quality * 25_000_000,
+            );
+          }
+          recorderOptions.audioBitsPerSecond = Math.round(quality * 320_000);
+
+          const recorder = new MediaRecorder(recordingStream, recorderOptions);
+          const chunks = [];
+          recorder.ondataavailable = (e) => {
+            if (e.data.size > 0) chunks.push(e.data);
+          };
+
+          const processPromise = new Promise((resolve) => {
+            recorder.onstop = () => {
+              if (drawRafId) cancelAnimationFrame(drawRafId);
+              if (audioCtx) audioCtx.close();
+              const outputMime = isAudioMode ? "audio/webm" : "video/webm";
+              const ext = isAudioMode ? "webm" : "webm";
+              const blob = new Blob(chunks, { type: outputMime });
+              resolve({
+                ...item,
+                processedUrl: URL.createObjectURL(blob),
+                processedSize: blob.size,
+                blob,
+                status: "done",
+                outputType: vidOutputMode,
+                dimensions: isAudioMode
+                  ? "Audio Extract"
+                  : `${canvas.width}x${canvas.height}`,
+                outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.${ext}`,
+              });
+            };
+          });
+
+          // Start recording in 250 ms chunks for smoother progress
+          recorder.start(250);
+          video.muted = isAudioMode ? false : true; // unmute only for audio mode (AudioContext handles routing)
+          await video.play();
+
+          // Poll to detect end — avoids stopping on transient pauses
+          await new Promise((resolve) => {
+            const poll = setInterval(() => {
+              if (video.currentTime >= endTime - 0.05 || video.ended) {
+                clearInterval(poll);
+                video.pause();
+                if (recorder.state !== "inactive") recorder.stop();
+                resolve();
+              }
+            }, 100);
+          });
+
+          results.push(await processPromise);
+        }
+      } catch (err) {
+        console.error("[BatchStudio] Error processing", item.name, err);
       }
 
       setProgress(Math.round(((i + 1) / files.length) * 100));
@@ -262,13 +364,8 @@ export default function BatchStudioPanel() {
   const downloadZip = async () => {
     const zip = new JSZip();
     processedFiles.forEach((file) => {
-      const ext =
-        file.type === "image"
-          ? targetImgFormat.split("/")[1]
-          : file.outputType === "audio"
-            ? "mp3"
-            : targetVidFormat.split("/")[1];
-      zip.file(`${file.name.split(".")[0]}_opt.${ext}`, file.blob);
+      const filename = file.outputName || `${file.name.split(".")[0]}_opt.webm`;
+      zip.file(filename, file.blob);
     });
     const content = await zip.generateAsync({ type: "blob" });
     const link = document.createElement("a");
@@ -1029,7 +1126,8 @@ export default function BatchStudioPanel() {
                   onClick={() => {
                     const link = document.createElement("a");
                     link.href = currentResult.processedUrl;
-                    link.download = currentResult.name;
+                    link.download =
+                      currentResult.outputName || currentResult.name;
                     link.click();
                   }}
                 >

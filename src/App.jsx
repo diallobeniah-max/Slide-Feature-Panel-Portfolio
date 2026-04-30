@@ -168,7 +168,7 @@ export default function App() {
   const initialIgUrl = initialParams.get("ig") || "";
   const initialWorkspace = initialParams.get("workspace");
 
-  const [isDark, setIsDark] = useState(false);
+  const [isDark, setIsDark] = useState(true);
   const [fontSize, setFontSize] = useState(16);
   const [workspace, setWorkspace] = useState(
     initialWorkspace === "capture" || initialIgUrl
