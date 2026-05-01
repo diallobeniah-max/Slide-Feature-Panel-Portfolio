@@ -23,6 +23,7 @@ import {
   Edit3,
   Scissors,
   ChevronRight,
+  ThumbsUp,
 } from "lucide-react";
 import { Card, Button, Badge, RangeSlider, Input } from "./ui";
 
@@ -114,10 +115,12 @@ export default function BatchStudioPanel() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [isFauxFullscreen, setIsFauxFullscreen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState({ show: false, progress: 0, complete: false });
 
   // Interaction Refs
   const [zoomPan, setZoomPan] = useState({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState(false);
+  const [volume, setVolume] = useState(1.0);
   const panStart = useRef({ x: 0, y: 0 });
   const fileInputRef = useRef(null);
   const videoRef = useRef(null);
@@ -307,7 +310,6 @@ export default function BatchStudioPanel() {
           // ── VIDEO: real-time canvas recording (no way around it without WASM)
           const video = document.createElement("video");
           video.src = item.preview;
-          video.muted = true;
           video.setAttribute("playsinline", "");
           video.preload = "metadata";
           await new Promise((resolve, reject) => {
@@ -346,6 +348,19 @@ export default function BatchStudioPanel() {
             Math.round(video.videoHeight * autoScale),
           );
           const recordingStream = canvas.captureStream(30);
+          
+          // Add audio track from video if available
+          if (video.captureStream) {
+            try {
+              const videoStream = video.captureStream();
+              const audioTracks = videoStream.getAudioTracks();
+              if (audioTracks.length > 0) {
+                recordingStream.addTrack(audioTracks[0]);
+              }
+            } catch (e) {
+              console.warn("Could not capture audio track:", e);
+            }
+          }
           let drawRafId = null;
           video.addEventListener("playing", function startDraw() {
             video.removeEventListener("playing", startDraw);
@@ -357,7 +372,7 @@ export default function BatchStudioPanel() {
             drawLoop();
           });
 
-          const mimeType = getSupportedMimeType(false, "video/webm;codecs=vp8");
+          const mimeType = getSupportedMimeType(false, targetVidFormat);
           if (!mimeType) throw new Error("No supported video MIME type.");
 
           const recorder = new MediaRecorder(recordingStream, {
@@ -372,7 +387,8 @@ export default function BatchStudioPanel() {
           const stopPromise = new Promise((resolve) => {
             recorder.onstop = () => {
               if (drawRafId) cancelAnimationFrame(drawRafId);
-              const blob = new Blob(chunks, { type: "video/webm" });
+              const ext = targetVidFormat === "video/mp4" ? "mp4" : "webm";
+              const blob = new Blob(chunks, { type: targetVidFormat });
               resolve({
                 ...item,
                 processedUrl: URL.createObjectURL(blob),
@@ -381,7 +397,7 @@ export default function BatchStudioPanel() {
                 status: "done",
                 outputType: "video",
                 dimensions: `${canvas.width}x${canvas.height}`,
-                outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.webm`,
+                outputName: `${item.name.replace(/\.[^.]+$/, "")}_opt.${ext}`,
               });
             };
           });
@@ -465,6 +481,46 @@ export default function BatchStudioPanel() {
     link.click();
   };
 
+  const downloadSingleFile = (file) => {
+    setDownloadProgress({ show: true, progress: 0, complete: false });
+    
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(file.blob);
+    link.download = file.outputName || `${file.name.split(".")[0]}_opt.webm`;
+    
+    // Simulate download progress
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += Math.random() * 15;
+      if (progress >= 100) {
+        progress = 100;
+        clearInterval(interval);
+        setDownloadProgress({ show: true, progress: 100, complete: true });
+        
+        // Play success sound
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        oscillator.frequency.value = 523.25; // C5
+        oscillator.type = 'sine';
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3);
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.3);
+        
+        setTimeout(() => {
+          setDownloadProgress({ show: false, progress: 0, complete: false });
+        }, 2000);
+      } else {
+        setDownloadProgress({ show: true, progress, complete: false });
+      }
+    }, 100);
+    
+    link.click();
+  };
+
   // Pan & Zoom handlers
   const handlePanStart = (e) => {
     if (!zoomMode) return;
@@ -495,12 +551,48 @@ export default function BatchStudioPanel() {
     }
   };
 
+  const handleVolumeChange = (e) => {
+    const newVolume = parseFloat(e.target.value);
+    setVolume(newVolume);
+    if (videoRef.current) videoRef.current.volume = newVolume;
+    if (originalVideoRef.current) originalVideoRef.current.volume = newVolume;
+  };
+
   const currentPreview = files.find((f) => f.id === previewId);
   const currentResult = processedFiles.find((p) => p.id === previewId);
   const currentTrimmingItem = files.find((f) => f.id === trimmingId);
 
   return (
     <main className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[22em_1fr] items-start">
+      {/* Download Progress Notification */}
+      {downloadProgress.show && (
+        <div className="fixed top-6 right-6 z-[300] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 min-w-[320px] animate-in slide-in-from-right duration-300">
+          {downloadProgress.complete ? (
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-emerald-500 rounded-full flex items-center justify-center">
+                <ThumbsUp size={24} className="text-white" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-zinc-900 dark:text-white">Download Complete!</p>
+                <p className="text-xs text-zinc-500">Your file is ready</p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-sm font-bold text-zinc-900 dark:text-white">Downloading...</p>
+                <span className="text-xs font-mono text-zinc-500">{Math.round(downloadProgress.progress)}%</span>
+              </div>
+              <div className="h-2 bg-zinc-200 dark:bg-zinc-700 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-zinc-900 dark:bg-white transition-all duration-100 ease-out"
+                  style={{ width: `${downloadProgress.progress}%` }}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
       {/* Left: Config Panel */}
       <aside className="grid content-start gap-5 panel-enter-aside">
         <Card className="p-6 flex flex-col gap-6">
@@ -630,23 +722,35 @@ export default function BatchStudioPanel() {
 
         {/* Download ZIP */}
         {processedFiles.length > 0 && !isProcessing && (
-          <Card className="p-5 flex items-center justify-between bg-zinc-50 dark:bg-zinc-800/50">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 bg-white dark:bg-zinc-700 rounded-full flex items-center justify-center text-zinc-900 dark:text-white shadow-sm border border-zinc-200 dark:border-zinc-600">
-                <Check size={20} />
+          <Card className="p-5 flex flex-col gap-4 bg-zinc-50 dark:bg-zinc-800/50">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-white dark:bg-zinc-700 rounded-full flex items-center justify-center text-zinc-900 dark:text-white shadow-sm border border-zinc-200 dark:border-zinc-600">
+                  <Check size={20} />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-xs font-bold uppercase tracking-widest text-zinc-900 dark:text-zinc-100">
+                    Ready
+                  </span>
+                  <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-widest">
+                    {processedFiles.length} Objects
+                  </span>
+                </div>
               </div>
-              <div className="flex flex-col">
-                <span className="text-xs font-bold uppercase tracking-widest text-zinc-900 dark:text-zinc-100">
-                  Ready
-                </span>
-                <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-widest">
-                  {processedFiles.length} Objects
-                </span>
-              </div>
+              <Button variant="secondary" size="icon" onClick={downloadZip}>
+                <FileArchive size={20} />
+              </Button>
             </div>
-            <Button variant="secondary" size="icon" onClick={downloadZip}>
-              <FileArchive size={20} />
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                className="flex-1"
+                onClick={downloadZip}
+              >
+                Download All (ZIP)
+              </Button>
+            </div>
           </Card>
         )}
       </aside>
@@ -872,6 +976,18 @@ export default function BatchStudioPanel() {
                       <Badge variant={savings > 0 ? "success" : "default"}>
                         -{savings}%
                       </Badge>
+                    )}
+                    {res && (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          downloadSingleFile(res);
+                        }}
+                      >
+                        Download Profile
+                      </Button>
                     )}
                     <Button
                       variant="ghost"
@@ -1133,6 +1249,7 @@ export default function BatchStudioPanel() {
                       className="max-w-full max-h-full"
                       muted
                       playsInline
+                      preload="metadata"
                     />
                   ) : (
                     <img
@@ -1170,6 +1287,7 @@ export default function BatchStudioPanel() {
                         src={currentResult.processedUrl}
                         className="max-w-full max-h-full"
                         playsInline
+                        preload="metadata"
                         onPlay={() => setIsPlaying(true)}
                         onPause={() => setIsPlaying(false)}
                       />
@@ -1180,6 +1298,7 @@ export default function BatchStudioPanel() {
                       src={currentPreview.preview}
                       className="max-w-full max-h-full opacity-30"
                       playsInline
+                      preload="metadata"
                     />
                   ) : (
                     <img
@@ -1230,31 +1349,50 @@ export default function BatchStudioPanel() {
                     <RotateCw size={20} />
                   </Button>
                 </div>
+                <div className="flex items-center gap-4 w-full max-w-xs">
+                  <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Volume</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.01"
+                    value={volume}
+                    onChange={handleVolumeChange}
+                    className="flex-1 h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:cursor-pointer [&::-webkit-slider-thumb]:shadow-md [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-white [&::-moz-range-thumb]:cursor-pointer [&::-moz-range-thumb]:shadow-md"
+                  />
+                  <span className="text-[10px] font-mono text-zinc-500 w-8">{Math.round(volume * 100)}%</span>
+                </div>
               </div>
             )}
 
             {/* Footer */}
-            <div className="p-6 bg-zinc-50 dark:bg-zinc-900 flex justify-between items-center px-8 border-t border-zinc-200 dark:border-zinc-800 shrink-0">
-              <div className="text-[10px] font-mono font-medium text-zinc-500 uppercase tracking-widest">
-                {currentResult
-                  ? `OUT: ${formatSize(currentResult.processedSize)} [${currentResult.dimensions}]`
-                  : "AWAITING ENGINE..."}
+            <div className="p-6 bg-zinc-50 dark:bg-zinc-900 flex flex-col gap-4 px-8 border-t border-zinc-200 dark:border-zinc-800 shrink-0">
+              <div className="flex justify-between items-center">
+                <div className="text-[10px] font-mono font-medium text-zinc-500 uppercase tracking-widest">
+                  {currentResult
+                    ? `OUT: ${formatSize(currentResult.processedSize)} [${currentResult.dimensions}]`
+                    : "AWAITING ENGINE..."}
+                </div>
               </div>
               {currentResult && (
-                <Button
-                  variant="primary"
-                  size="md"
-                  icon={Download}
-                  onClick={() => {
-                    const link = document.createElement("a");
-                    link.href = currentResult.processedUrl;
-                    link.download =
-                      currentResult.outputName || currentResult.name;
-                    link.click();
-                  }}
-                >
-                  Save Object
-                </Button>
+                <div className="flex gap-3">
+                  <Button
+                    variant="primary"
+                    size="md"
+                    icon={Download}
+                    onClick={() => downloadSingleFile(currentResult)}
+                  >
+                    Download Profile
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    icon={FileArchive}
+                    onClick={downloadZip}
+                  >
+                    Download All (ZIP)
+                  </Button>
+                </div>
               )}
             </div>
           </Card>

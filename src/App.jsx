@@ -8,6 +8,7 @@ import {
   Monitor,
   Bell,
   Volume2,
+  Cpu,
 } from "lucide-react";
 import { useEffect, useState, useRef, useCallback } from "react";
 import BatchStudioPanel from "./components/BatchStudio.jsx";
@@ -33,6 +34,8 @@ function SettingsPopover({
   setFontSize,
   isDark,
   setIsDark,
+  themeMode,
+  setThemeMode,
   soundEnabled,
   setSoundEnabled,
   notifsEnabled,
@@ -192,30 +195,34 @@ function SettingsPopover({
               ))}
             </div>
 
-            {/* Dark mode toggle */}
-            <button
-              onClick={() => setIsDark((v) => !v)}
-              className="flex w-full items-center justify-between rounded-2xl border border-zinc-200 bg-white px-4 py-3.5 transition-all hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className={`grid h-8 w-8 place-items-center rounded-xl transition-colors ${isDark ? "bg-zinc-800 text-zinc-200" : "bg-amber-50 text-amber-600"}`}
-                >
-                  {isDark ? <Moon size={15} /> : <Sun size={15} />}
-                </div>
-                <span className="text-[12px] font-black text-zinc-900 dark:text-zinc-100">
-                  {isDark ? "Dark mode" : "Light mode"}
-                </span>
+            {/* Theme mode toggle */}
+            <div>
+              <p className="mb-3 text-[10px] font-black uppercase tracking-widest text-zinc-400">
+                Theme
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: "auto", label: "Auto", icon: <Cpu size={14} /> },
+                  { value: "light", label: "Light", icon: <Sun size={14} /> },
+                  { value: "dark", label: "Dark", icon: <Moon size={14} /> },
+                ].map((mode) => (
+                  <button
+                    key={mode.value}
+                    onClick={() => setThemeMode(mode.value)}
+                    className={`flex flex-col items-center gap-1.5 rounded-xl py-3 transition-all duration-200 ${
+                      themeMode === mode.value
+                        ? "bg-zinc-950 text-white shadow-md dark:bg-white dark:text-zinc-950"
+                        : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                    }`}
+                  >
+                    {mode.icon}
+                    <span className="text-[9px] font-black uppercase tracking-widest">
+                      {mode.label}
+                    </span>
+                  </button>
+                ))}
               </div>
-              {/* Toggle pill */}
-              <div
-                className={`relative h-6 w-11 rounded-full transition-colors duration-300 ${isDark ? "bg-zinc-950 dark:bg-white" : "bg-zinc-200"}`}
-              >
-                <span
-                  className={`absolute top-0.5 h-5 w-5 rounded-full shadow-md transition-all duration-300 ${isDark ? "left-5 bg-white dark:bg-zinc-950" : "left-0.5 bg-white"}`}
-                />
-              </div>
-            </button>
+            </div>
           </div>
         </div>
       )}
@@ -230,6 +237,7 @@ export default function App() {
   const initialWorkspace = initialParams.get("workspace");
 
   const [isDark, setIsDark] = useState(true);
+  const [themeMode, setThemeMode] = useState("auto");
   const [fontSize, setFontSize] = useState(16);
   const [workspace, setWorkspace] = useState(
     initialWorkspace === "capture" || initialIgUrl
@@ -266,6 +274,20 @@ export default function App() {
     return () => window.removeEventListener("studio-notify", handler);
   }, [soundEnabled, notifsEnabled]);
 
+  // Auto-detect system theme preference
+  useEffect(() => {
+    if (themeMode === "auto") {
+      const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      setIsDark(mediaQuery.matches);
+      
+      const handler = (e) => setIsDark(e.matches);
+      mediaQuery.addEventListener("change", handler);
+      return () => mediaQuery.removeEventListener("change", handler);
+    } else {
+      setIsDark(themeMode === "dark");
+    }
+  }, [themeMode]);
+
   useEffect(() => {
     document.documentElement.classList.toggle("dark", isDark);
   }, [isDark]);
@@ -296,6 +318,8 @@ export default function App() {
               setFontSize={setFontSize}
               isDark={isDark}
               setIsDark={setIsDark}
+              themeMode={themeMode}
+              setThemeMode={setThemeMode}
               soundEnabled={soundEnabled}
               setSoundEnabled={setSoundEnabled}
               notifsEnabled={notifsEnabled}
