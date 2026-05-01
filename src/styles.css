@@ -12,7 +12,7 @@ html {
 body {
     margin: 0;
     min-width: 320px;
-    background: #fafafa;
+    background: #f4f4f5;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
 }
@@ -249,7 +249,7 @@ textarea {
 
 /* ─── Skeleton shimmer ────────────────────────────────────────── */
 .skeleton {
-    background: linear-gradient(90deg, #f4f4f5 25%, #e4e4e7 50%, #f4f4f5 75%);
+    background: linear-gradient(90deg, #e4e4e7 25%, #d4d4d8 50%, #e4e4e7 75%);
     background-size: 200% 100%;
     animation: studio-shimmer 1.4s ease infinite;
     border-radius: 12px;
