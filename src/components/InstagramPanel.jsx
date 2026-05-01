@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import JSZip from "jszip";
 import { downloadBlob } from "../utils/media.js";
+import { runBrowserOcr } from "../utils/ocr.js";
 import { Badge, Button, Card, Input } from "./ui.jsx";
 
 const notify = (title, message, type = "success") =>
@@ -714,98 +715,19 @@ export default function InstagramPanel({ initialUrl = "" }) {
 
     setOcrLoadingId(item.id);
     setOcrProgress(1);
-    let worker;
     try {
-      const { createWorker, PSM } = await import("tesseract.js");
-      const sources = await imageToOcrSources(item.previewUrl);
-      worker = await createWorker("eng", 1, {
-        logger: (message) => {
-          if (typeof message.progress === "number") {
-            setOcrProgress((current) =>
-              Math.max(current, Math.round(message.progress * 100)),
-            );
-          }
+      const result = await runBrowserOcr(item.previewUrl, {
+        profile: "instagram",
+        maxLineLength: 42,
+        onProgress: (progress) => {
+          setOcrProgress((current) => Math.max(current, progress));
         },
       });
-      await worker.setParameters({
-        tessedit_char_whitelist: OCR_CHAR_WHITELIST,
-        preserve_interword_spaces: "1",
-        tessedit_pageseg_mode: PSM.SPARSE_TEXT,
-        user_defined_dpi: "300",
-      });
-      let best = { confidence: 0, score: 0, text: "" };
-      const lineBuckets = new Map();
-      for (let index = 0; index < sources.length; index += 1) {
-        const pageSegMode =
-          sources[index].psm === "line"
-            ? PSM.SINGLE_LINE
-            : sources[index].psm === "block"
-              ? PSM.SINGLE_BLOCK
-              : PSM.SPARSE_TEXT;
-        await worker.setParameters({
-          tessedit_char_whitelist: OCR_CHAR_WHITELIST,
-          preserve_interword_spaces: "1",
-          tessedit_pageseg_mode: pageSegMode,
-          user_defined_dpi: "300",
-        });
-        const result = await worker.recognize(
-          sources[index].source,
-          {},
-          { blocks: true },
-        );
-        const confidence = Math.round(result.data.confidence || 0);
-        const text = normalizeOcrDisplayText(arrangeOcrWords(result.data), 42);
-        const score = scoreOcrText(text, confidence);
-        if (text && score > best.score) {
-          best = { confidence, score, text };
-        }
-        if (Number.isInteger(sources[index].lineOrder) && text) {
-          const lineText = text.split(/\r?\n/)[0]?.trim() || "";
-          const lineScore = scoreOcrText(lineText, confidence);
-          const existing = lineBuckets.get(sources[index].lineOrder);
-          if (lineText && (!existing || lineScore > existing.score)) {
-            lineBuckets.set(sources[index].lineOrder, {
-              confidence,
-              score: lineScore,
-              text: lineText,
-            });
-          }
-        }
-        setOcrProgress(
-          Math.max(5, Math.min(98, Math.round(((index + 1) / sources.length) * 100))),
-        );
-      }
-      const arrangedLines = [...lineBuckets.entries()]
-        .sort(([left], [right]) => left - right)
-        .map(([, line]) => line)
-        .filter((line) => {
-          const words = line.text.match(/[A-Za-z0-9]{2,}/g) || [];
-          const longerWords = words.filter((word) => word.length >= 3);
-          return line.score >= 30 && longerWords.length >= 2 && shouldKeepOcrLine(line.text);
-        })
-        .map((line) => line.text)
-        .filter((line, index, allLines) => allLines.indexOf(line) === index);
-      if (isReadableOcrLayout(arrangedLines)) {
-        const confidence =
-          arrangedLines.reduce((total, line) => {
-            const bucket = [...lineBuckets.values()].find((item) => item.text === line);
-            return total + (bucket?.confidence || 0);
-          }, 0) / arrangedLines.length;
-        const arrangedText = normalizeOcrDisplayText(arrangedLines.join("\n"), 42);
-        const arrangedScore = scoreOcrText(arrangedText, confidence) + arrangedLines.length * 14;
-        if (arrangedScore >= best.score * 0.85) {
-          best = {
-            confidence: Math.round(confidence),
-            score: arrangedScore,
-            text: arrangedText,
-          };
-        }
-      }
       setOcrById((current) => ({
         ...current,
         [item.id]: {
-          confidence: best.confidence,
-          text: normalizeOcrDisplayText(best.text, 42) || "No clear text found on this media.",
+          confidence: result.confidence,
+          text: result.text || "No clear text found on this media.",
         },
       }));
     } catch {
@@ -818,7 +740,6 @@ export default function InstagramPanel({ initialUrl = "" }) {
         },
       }));
     } finally {
-      if (worker) await worker.terminate();
       setOcrLoadingId(null);
       setOcrProgress(0);
     }

@@ -3,7 +3,7 @@ import React from "react";
 export function Card({ children, className = "", ...props }) {
   return (
     <div
-      className={`bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-[24px] shadow-sm overflow-hidden transition-all duration-300 ${className}`}
+      className={`bg-zinc-50/95 dark:bg-zinc-900/95 border border-zinc-200/80 dark:border-zinc-800/80 rounded-[24px] shadow-sm shadow-zinc-950/5 dark:shadow-black/20 overflow-hidden transition-all duration-300 ${className}`}
       {...props}
     >
       {children}
@@ -73,9 +73,31 @@ export function Input({
   min,
   max,
   step,
+  onWheel,
   className = "",
   ...props
 }) {
+  const handleWheel = (event) => {
+    onWheel?.(event);
+    if (type !== "number" || event.defaultPrevented) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const stepValue = Number(step) || 1;
+    const minValue = min === undefined || min === "" ? -Infinity : Number(min);
+    const maxValue = max === undefined || max === "" ? Infinity : Number(max);
+    const current = value === "" ? (Number.isFinite(minValue) ? minValue : 0) : Number(value);
+    if (!Number.isFinite(current)) return;
+
+    const direction = event.deltaY < 0 ? 1 : -1;
+    const next = Math.min(maxValue, Math.max(minValue, current + direction * stepValue));
+    const stepText = String(step || "");
+    const decimals = stepText.includes(".") ? stepText.split(".")[1].length : 0;
+    const nextValue = decimals ? next.toFixed(decimals) : String(Math.round(next));
+    onChange?.({ target: { value: nextValue, name: props.name } });
+  };
+
   return (
     <div className={`flex flex-col gap-2 ${className}`}>
       {label && (
@@ -91,6 +113,7 @@ export function Input({
         min={min}
         max={max}
         step={step}
+        onWheel={handleWheel}
         className="w-full px-4 py-3 rounded-2xl border border-zinc-200 bg-zinc-50 text-sm text-zinc-900 transition-all focus:border-zinc-950 focus:bg-white focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-white dark:focus:bg-zinc-900 dark:focus:ring-white/5 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-medium"
         {...props}
       />
@@ -154,6 +177,7 @@ export function RangeSlider({
         step={step}
         value={value}
         onChange={onChange}
+        onInput={onChange}
         className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full appearance-none cursor-pointer accent-zinc-950 dark:accent-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-600 transition-all hover:h-2"
       />
     </div>

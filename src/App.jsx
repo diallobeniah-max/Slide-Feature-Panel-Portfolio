@@ -16,16 +16,18 @@ import SlideSlicerPanel from "./components/SlideSlicerPanel.jsx";
 import InstagramPanel from "./components/InstagramPanel.jsx";
 import GridBuilder from "./components/GridBuilder.jsx";
 import SpellChecker from "./components/SpellChecker.jsx";
+import WritingPanel from "./components/WritingPanel.jsx";
 import Notifications, { playChime } from "./components/Notifications.jsx";
 
 const iconProps = { strokeWidth: 1.75 };
 
 const WORKSPACE_TABS = [
-  { value: "slicer", label: "Slide Slicer" },
-  { value: "grid", label: "Grid Builder" },
-  { value: "spellcheck", label: "Spell Check" },
-  { value: "instagram", label: "Carousel Capture" },
-  { value: "batch", label: "Batch Studio" },
+  { value: "slicer", label: "Slicer" },
+  { value: "grid", label: "Grid" },
+  { value: "spellcheck", label: "Spell" },
+  { value: "writing", label: "Write" },
+  { value: "instagram", label: "Capture" },
+  { value: "batch", label: "Batch" },
 ];
 
 /* ─── Settings Popover ─────────────────────────────────────────── */
@@ -248,6 +250,7 @@ export default function App() {
   );
   const [prevWorkspace, setPrevWorkspace] = useState(workspace);
   const [animKey, setAnimKey] = useState(0);
+  const [isHeaderCompact, setIsHeaderCompact] = useState(false);
 
   // Notifications
   const [notifications, setNotifications] = useState([]);
@@ -299,6 +302,63 @@ export default function App() {
     );
   }, [fontSize]);
 
+  useEffect(() => {
+    const handleScroll = () => setIsHeaderCompact(window.scrollY > 24);
+    const handlePanelScroll = (event) =>
+      setIsHeaderCompact(Boolean(event.detail?.compact));
+    handleScroll();
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("studio-panel-scroll", handlePanelScroll);
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("studio-panel-scroll", handlePanelScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    const formatSteppedValue = (value, step) => {
+      const stepText = String(step || "");
+      const decimals = stepText.includes(".") ? stepText.split(".")[1].length : 0;
+      return decimals ? value.toFixed(decimals) : String(Math.round(value));
+    };
+
+    const handleNumberWheel = (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement) || target.type !== "number") return;
+      if (document.activeElement !== target && !target.matches(":hover")) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const step = Number(target.step) || 1;
+      const min = target.min === "" ? -Infinity : Number(target.min);
+      const max = target.max === "" ? Infinity : Number(target.max);
+      const fallback = Number.isFinite(min) ? min : 0;
+      const current = target.value === "" ? fallback : Number(target.value);
+      if (!Number.isFinite(current)) return;
+
+      const direction = event.deltaY < 0 ? 1 : -1;
+      const next = Math.min(max, Math.max(min, current + direction * step));
+      const setter = Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      setter?.call(target, formatSteppedValue(next, step));
+      target.dispatchEvent(new Event("input", { bubbles: true }));
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+    };
+
+    window.addEventListener("wheel", handleNumberWheel, {
+      capture: true,
+      passive: false,
+    });
+    return () => {
+      window.removeEventListener("wheel", handleNumberWheel, {
+        capture: true,
+      });
+    };
+  }, []);
+
   const switchTab = (value) => {
     if (value === workspace) return;
     setPrevWorkspace(workspace);
@@ -306,11 +366,30 @@ export default function App() {
     setAnimKey((k) => k + 1);
   };
 
+  const handleShellWheel = (event) => {
+    if (event.deltaY > 8) {
+      setIsHeaderCompact(true);
+    } else if (event.deltaY < -8 && window.scrollY <= 4) {
+      setIsHeaderCompact(false);
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-950 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-50">
+    <div
+      className="min-h-screen bg-zinc-50 text-zinc-950 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-50"
+      onWheelCapture={handleShellWheel}
+    >
       {/* ── Header ─────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-40 border-b border-zinc-200/70 bg-zinc-50/85 backdrop-blur-xl backdrop-saturate-150 dark:border-zinc-800/70 dark:bg-zinc-950/85">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 py-3.5">
+      <header
+        className={`sticky top-0 z-40 border-b border-zinc-200/70 bg-zinc-50/90 backdrop-blur-xl backdrop-saturate-150 transition-all duration-300 ease-out dark:border-zinc-800/70 dark:bg-zinc-950/90 ${
+          isHeaderCompact ? "shadow-lg shadow-black/5 dark:shadow-black/30" : ""
+        }`}
+      >
+        <div
+          className={`mx-auto flex max-w-7xl items-center justify-between gap-4 px-5 transition-all duration-300 ease-out ${
+            isHeaderCompact ? "py-2" : "py-3.5"
+          }`}
+        >
           {/* Logo */}
           <div className="flex items-center gap-3.5">
             <SettingsPopover
@@ -327,27 +406,38 @@ export default function App() {
             />
             <div>
               <div className="flex items-center gap-2">
-                <div className="grid h-7 w-7 place-items-center rounded-xl bg-zinc-950 text-white shadow-sm dark:bg-white dark:text-zinc-950">
-                  <Layers size={14} strokeWidth={2.5} />
+                <div
+                  className={`grid place-items-center rounded-xl bg-zinc-950 text-white shadow-sm transition-all duration-300 dark:bg-white dark:text-zinc-950 ${
+                    isHeaderCompact ? "h-6 w-6" : "h-7 w-7"
+                  }`}
+                >
+                  <Layers size={isHeaderCompact ? 13 : 14} strokeWidth={2.5} />
                 </div>
-                <h1 className="text-[1.1em] font-black italic tracking-tight text-zinc-900 dark:text-white">
-                  SliceStudio Pro
+                <h1
+                  className={`font-black tracking-tight text-zinc-900 transition-all duration-300 dark:text-white ${
+                    isHeaderCompact ? "text-[0.98em]" : "text-[1.08em]"
+                  }`}
+                >
+                  ContentFlow
                 </h1>
               </div>
-              <p className="mt-0.5 font-mono text-[9px] font-bold uppercase tracking-widest text-zinc-400">
-                Media workflow suite · local engine
-              </p>
             </div>
           </div>
 
           {/* Desktop tab bar */}
           <nav className="hidden items-center md:flex">
-            <div className="flex gap-1 rounded-2xl border border-zinc-200/80 bg-white p-1 shadow-sm dark:border-zinc-800/80 dark:bg-zinc-900">
+            <div
+              className={`flex gap-1 rounded-2xl border border-zinc-200/80 bg-white shadow-sm transition-all duration-300 dark:border-zinc-800/80 dark:bg-zinc-900 ${
+                isHeaderCompact ? "p-0.5" : "p-1"
+              }`}
+            >
               {WORKSPACE_TABS.map(({ value, label }) => (
                 <button
                   key={value}
                   onClick={() => switchTab(value)}
-                  className={`relative rounded-xl px-4 py-2 text-[11px] font-black uppercase tracking-widest transition-all duration-200 ease-out
+                  className={`relative rounded-xl font-black uppercase tracking-widest transition-all duration-300 ease-out ${
+                    isHeaderCompact ? "px-3 py-1.5 text-[9px]" : "px-3.5 py-2 text-[10px]"
+                  }
                     ${
                       workspace === value
                         ? "bg-zinc-950 text-white shadow-md dark:bg-white dark:text-zinc-950"
@@ -365,12 +455,18 @@ export default function App() {
         </div>
 
         {/* Mobile tab bar */}
-        <div className="flex gap-1 border-t border-zinc-100 px-4 py-2 md:hidden dark:border-zinc-800">
+        <div
+          className={`flex gap-1 border-t border-zinc-100 px-4 transition-all duration-300 md:hidden dark:border-zinc-800 ${
+            isHeaderCompact ? "py-1.5" : "py-2"
+          }`}
+        >
           {WORKSPACE_TABS.map(({ value, label }) => (
             <button
               key={value}
               onClick={() => switchTab(value)}
-              className={`flex-1 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-widest transition-all duration-200
+              className={`flex-1 rounded-xl px-2 font-black uppercase tracking-widest transition-all duration-200 ${
+                isHeaderCompact ? "py-1.5 text-[9px]" : "py-2 text-[10px]"
+              }
                 ${
                   workspace === value
                     ? "bg-zinc-950 text-white shadow-sm dark:bg-white dark:text-zinc-950"
@@ -393,6 +489,8 @@ export default function App() {
           <GridBuilder />
         ) : workspace === "spellcheck" ? (
           <SpellChecker />
+        ) : workspace === "writing" ? (
+          <WritingPanel />
         ) : (
           <SlideSlicerPanel />
         )}

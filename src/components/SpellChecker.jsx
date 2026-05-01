@@ -1,25 +1,12 @@
 import React, { useRef, useState } from "react";
 import { Upload, ScanText, CheckCircle2, AlertTriangle, X, RefreshCw, AlignLeft } from "lucide-react";
 import { Button, Card, Badge } from "./ui.jsx";
+import { runBrowserOcr } from "../utils/ocr.js";
 
 const notify = (title, message, type = "success") =>
   window.dispatchEvent(new CustomEvent("studio-notify", { detail: { title, message, type } }));
 
 /* ── Lazy-load Tesseract from CDN ───────────────────────────────── */
-let tesseractPromise = null;
-function loadTesseract() {
-  if (tesseractPromise) return tesseractPromise;
-  tesseractPromise = new Promise((resolve, reject) => {
-    if (window.Tesseract) return resolve(window.Tesseract);
-    const s = document.createElement("script");
-    s.src = "https://unpkg.com/tesseract.js@5/dist/tesseract.min.js";
-    s.onload = () => resolve(window.Tesseract);
-    s.onerror = () => reject(new Error("Could not load Tesseract.js"));
-    document.head.appendChild(s);
-  });
-  return tesseractPromise;
-}
-
 /* ── LanguageTool spell check ───────────────────────────────────── */
 async function checkSpelling(text) {
   try {
@@ -92,16 +79,15 @@ export default function SpellChecker() {
     try {
       // Stage 1 — load Tesseract
       setStage(0);
-      const Tesseract = await loadTesseract();
       setScanPct(15);
 
       // Stage 2 — OCR
       setStage(1);
-      const { data: { text } } = await Tesseract.recognize(image, "eng", {
-        logger: m => {
-          if (m.status === "recognizing text") {
-            setScanPct(15 + Math.round(m.progress * 55));
-          }
+      const { text } = await runBrowserOcr(image, {
+        profile: "spell",
+        maxLineLength: 56,
+        onProgress: (progress) => {
+          setScanPct(15 + Math.round(progress * 0.55));
         },
       });
       const cleanText = text.trim();

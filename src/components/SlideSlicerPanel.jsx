@@ -81,42 +81,67 @@ export default function SlideSlicerPanel() {
     setStatus({ type: "loading", message: "Rendering slide slices..." });
 
     const image = new Image();
+    image.crossOrigin = "anonymous";
     image.src = sourceImage;
-    await new Promise((resolve) => {
+    await new Promise((resolve, reject) => {
       image.onload = resolve;
+      image.onerror = () => reject(new Error("Failed to load image"));
     });
 
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-    canvas.width = slideWidth;
-    canvas.height = slideHeight;
     const slices = [];
 
     for (let index = 0; index < slideCount; index += 1) {
-      ctx.clearRect(0, 0, slideWidth, slideHeight);
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+      canvas.width = slideWidth;
+      canvas.height = slideHeight;
+
       const sourceWidth =
         direction === "horizontal" ? image.width / slideCount : image.width;
       const sourceHeight =
         direction === "horizontal" ? image.height : image.height / slideCount;
       const sourceX = direction === "horizontal" ? index * sourceWidth : 0;
       const sourceY = direction === "horizontal" ? 0 : index * sourceHeight;
+      
+      // Calculate aspect ratios
+      const sourceAspectRatio = sourceWidth / sourceHeight;
+      const targetAspectRatio = slideWidth / slideHeight;
+      
+      let drawWidth, drawHeight, drawX = 0, drawY = 0;
+      
+      if (sourceAspectRatio > targetAspectRatio) {
+        // Source is wider than target - fit to height
+        drawHeight = slideHeight;
+        drawWidth = slideHeight * sourceAspectRatio;
+        drawX = (slideWidth - drawWidth) / 2;
+      } else {
+        // Source is taller than target - fit to width
+        drawWidth = slideWidth;
+        drawHeight = slideWidth / sourceAspectRatio;
+        drawY = (slideHeight - drawHeight) / 2;
+      }
+      
       const zoomFactor = 1 / zoom;
-      const panX = (pan.x / 100) * sourceWidth;
-      const panY = (pan.y / 100) * sourceHeight;
+      const panX = (pan.x / 100) * image.width;
+      const panY = (pan.y / 100) * image.height;
 
+      // Clear canvas with white background
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, slideWidth, slideHeight);
+      
       ctx.drawImage(
         image,
-        sourceX - panX,
-        sourceY - panY,
+        sourceX + panX,
+        sourceY + panY,
         sourceWidth * zoomFactor,
         sourceHeight * zoomFactor,
-        0,
-        0,
-        slideWidth,
-        slideHeight,
+        drawX,
+        drawY,
+        drawWidth,
+        drawHeight,
       );
       slices.push(canvas.toDataURL("image/png"));
-      await new Promise((resolve) => window.setTimeout(resolve, 40));
+      await new Promise((resolve) => window.setTimeout(resolve, 20));
     }
 
     setGeneratedSlices(slices);
