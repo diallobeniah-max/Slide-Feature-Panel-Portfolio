@@ -17,6 +17,7 @@ import InstagramPanel from "./components/InstagramPanel.jsx";
 import GridBuilder from "./components/GridBuilder.jsx";
 import SpellChecker from "./components/SpellChecker.jsx";
 import WritingPanel from "./components/WritingPanel.jsx";
+import YouTubePanel from "./components/YouTubePanel.jsx";
 import Notifications, { playChime } from "./components/Notifications.jsx";
 
 const iconProps = { strokeWidth: 1.75 };
@@ -28,6 +29,7 @@ const WORKSPACE_TABS = [
   { value: "writing", label: "Write" },
   { value: "instagram", label: "Capture" },
   { value: "batch", label: "Batch" },
+  { value: "youtube", label: "Tube" },
 ];
 
 /* ─── Settings Popover ─────────────────────────────────────────── */
@@ -491,6 +493,8 @@ export default function App() {
           <SpellChecker />
         ) : workspace === "writing" ? (
           <WritingPanel />
+        ) : workspace === "youtube" ? (
+          <YouTubePanel />
         ) : (
           <SlideSlicerPanel />
         )}
