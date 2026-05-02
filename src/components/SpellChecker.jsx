@@ -178,7 +178,7 @@ export default function SpellChecker() {
             className="border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer dropzone-interactive group
               border-zinc-200 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-600"
           >
-            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-xl bg-zinc-100 dark:bg-zinc-800 text-zinc-400 icon-float">
+            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-xl bg-white/60 dark:bg-zinc-800 text-zinc-400 icon-float">
               <Upload size={22} className="icon-pop" />
             </div>
             <p className="text-[11px] font-black uppercase tracking-widest text-zinc-700 dark:text-zinc-300">
@@ -200,7 +200,7 @@ export default function SpellChecker() {
               onChange={e => setExpectedText(e.target.value)}
               rows={4}
               placeholder="Type the text you expect to be in the image…"
-              className="resize-none rounded-2xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm font-medium text-zinc-900 transition-all placeholder:text-zinc-400 focus:border-zinc-950 focus:bg-white focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:border-white dark:focus:bg-zinc-900 dark:focus:ring-white/5"
+              className="resize-none rounded-2xl border border-zinc-200 bg-white px-4 py-3 text-sm font-medium text-zinc-900 transition-all placeholder:text-zinc-400 focus:border-zinc-950 focus:bg-white focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-600 dark:focus:border-white dark:focus:bg-zinc-900 dark:focus:ring-white/5"
             />
             {expectedText && (
               <p className="text-[10px] text-zinc-400 font-medium">
@@ -238,7 +238,7 @@ export default function SpellChecker() {
           {/* Stats */}
           {hasResult && (
             <div className="grid grid-cols-2 gap-2">
-              <div className="rounded-2xl bg-zinc-50 dark:bg-zinc-800/50 p-3 text-center border border-zinc-200 dark:border-zinc-800">
+              <div className="rounded-2xl bg-white dark:bg-zinc-800/50 p-3 text-center border border-zinc-200 dark:border-zinc-800">
                 <p className="text-2xl font-black text-zinc-950 dark:text-white">
                   {ocrText.trim().split(/\s+/).filter(Boolean).length}
                 </p>
@@ -279,7 +279,7 @@ export default function SpellChecker() {
             </h3>
           </div>
 
-          <div className="relative bg-zinc-100 dark:bg-zinc-950/60 flex items-center justify-center min-h-64 overflow-hidden">
+          <div className="relative bg-white/60 dark:bg-zinc-950/60 flex items-center justify-center min-h-64 overflow-hidden">
             {image ? (
               <>
                 <img src={image} alt="To check" className="max-w-full max-h-72 object-contain" />
@@ -436,3 +436,4 @@ export default function SpellChecker() {
     );
   }
 }
+

@@ -613,7 +613,7 @@ export default function BatchStudioPanel() {
 
           <div className="space-y-4">
             {/* Image Format */}
-            <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30">
+            <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-3 text-center">
                 Image Format
               </label>
@@ -634,7 +634,7 @@ export default function BatchStudioPanel() {
             </Card>
 
             {/* Export Mode */}
-            <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30">
+            <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
               <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-3 text-center">
                 Export Mode
               </label>
@@ -686,7 +686,7 @@ export default function BatchStudioPanel() {
             </Card>
 
             {/* Quality Slider */}
-            <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30">
+            <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
               <RangeSlider
                 label="Engine Intensity"
                 valueLabel={`${Math.round(quality * 100)}%`}
@@ -722,7 +722,7 @@ export default function BatchStudioPanel() {
 
         {/* Download ZIP */}
         {processedFiles.length > 0 && !isProcessing && (
-          <Card className="p-5 flex flex-col gap-4 bg-zinc-50 dark:bg-zinc-800/50">
+          <Card className="p-5 flex flex-col gap-4 bg-white dark:bg-zinc-800/50">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-white dark:bg-zinc-700 rounded-full flex items-center justify-center text-zinc-900 dark:text-white shadow-sm border border-zinc-200 dark:border-zinc-600">
@@ -760,7 +760,7 @@ export default function BatchStudioPanel() {
         <div className="flex justify-between items-center px-2">
           <div className="flex items-center gap-3">
             <div
-              className={`w-2 h-2 rounded-full ${files.length > 0 ? "bg-zinc-900 dark:bg-zinc-100 animate-pulse" : "bg-zinc-300 dark:bg-zinc-700"}`}
+              className={`w-2 h-2 rounded-full ${files.length > 0 ? "bg-zinc-900 dark:bg-white/60 animate-pulse" : "bg-zinc-300 dark:bg-zinc-700"}`}
             />
             <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-2">
               Task Queue <Badge variant="default">{files.length}</Badge>
@@ -785,10 +785,10 @@ export default function BatchStudioPanel() {
             onDragLeave={() => setIsDragging(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current.click()}
-            className={`h-[400px] border-2 border-dashed rounded-[32px] flex flex-col items-center justify-center space-y-6 cursor-pointer group dropzone-interactive ${isDragging ? "border-zinc-950 bg-zinc-50 dark:border-white dark:bg-zinc-900/50" : "border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/30 hover:border-zinc-400 dark:hover:border-zinc-600"}`}
+            className={`h-[400px] border-2 border-dashed rounded-[32px] flex flex-col items-center justify-center space-y-6 cursor-pointer group dropzone-interactive ${isDragging ? "border-zinc-950 bg-white dark:border-white dark:bg-zinc-900/50" : "border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/30 hover:border-zinc-400 dark:hover:border-zinc-600"}`}
           >
             <div
-              className={`w-20 h-20 rounded-2xl flex items-center justify-center ${isDragging ? "scale-110 bg-zinc-950 text-white dark:bg-white dark:text-zinc-950" : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800"}`}
+              className={`w-20 h-20 rounded-2xl flex items-center justify-center ${isDragging ? "scale-110 bg-zinc-950 text-white dark:bg-white dark:text-zinc-950" : "bg-white/60 text-zinc-400 dark:bg-zinc-800"}`}
             >
               <Upload size={36} className="icon-pop icon-float" />
             </div>
@@ -821,7 +821,7 @@ export default function BatchStudioPanel() {
                   <div className="flex-1 flex items-center gap-6">
                     {/* Source */}
                     <div className="flex items-center gap-4 min-w-[220px] border-r border-zinc-100 dark:border-zinc-800 pr-6">
-                      <div className="w-14 h-14 bg-zinc-100 dark:bg-zinc-800 rounded-xl overflow-hidden relative shrink-0">
+                      <div className="w-14 h-14 bg-white/60 dark:bg-zinc-800 rounded-xl overflow-hidden relative shrink-0">
                         {file.type === "video" ? (
                           <video
                             src={file.preview}
@@ -932,9 +932,9 @@ export default function BatchStudioPanel() {
                         </div>
                       ) : res ? (
                         <>
-                          <div className="w-14 h-14 bg-zinc-100 dark:bg-zinc-800 rounded-xl overflow-hidden relative shrink-0 group-hover:scale-105 transition-transform">
+                          <div className="w-14 h-14 bg-white/60 dark:bg-zinc-800 rounded-xl overflow-hidden relative shrink-0 group-hover:scale-105 transition-transform">
                             {res.outputType === "audio" ? (
-                              <div className="w-full h-full flex items-center justify-center text-zinc-900 dark:text-white bg-zinc-100 dark:bg-zinc-800">
+                              <div className="w-full h-full flex items-center justify-center text-zinc-900 dark:text-white bg-white/60 dark:bg-zinc-800">
                                 <Music size={20} />
                               </div>
                             ) : file.type === "video" ? (
@@ -1029,7 +1029,7 @@ export default function BatchStudioPanel() {
             onClick={() => setTrimmingId(null)}
           />
           <Card className="relative w-full max-w-2xl bg-white dark:bg-zinc-900 rounded-[32px] overflow-hidden shadow-2xl flex flex-col border border-zinc-200 dark:border-zinc-800">
-            <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-zinc-50/50 dark:bg-zinc-900/50">
+            <div className="p-6 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-white/50 dark:bg-zinc-900/50">
               <div className="flex items-center gap-3 text-zinc-900 dark:text-white font-bold">
                 <Scissors size={20} />
                 <p className="text-sm uppercase tracking-widest">
@@ -1076,7 +1076,7 @@ export default function BatchStudioPanel() {
               </div>
 
               <div className="space-y-6">
-                <div className="flex justify-between text-[11px] font-bold uppercase text-zinc-500 bg-zinc-100 dark:bg-zinc-800 px-6 py-3 rounded-2xl shadow-inner border border-zinc-200 dark:border-zinc-700">
+                <div className="flex justify-between text-[11px] font-bold uppercase text-zinc-500 bg-white/60 dark:bg-zinc-800 px-6 py-3 rounded-2xl shadow-inner border border-zinc-200 dark:border-zinc-700">
                   <span>IN: {formatTime(currentTrimmingItem.trim.start)}</span>
                   <span className="text-zinc-900 dark:text-zinc-100 font-mono tracking-tighter">
                     REGION:{" "}
@@ -1160,7 +1160,7 @@ export default function BatchStudioPanel() {
             {/* Modal Header */}
             <div className="p-5 px-8 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-white dark:bg-zinc-900 shrink-0">
               <div className="flex items-center gap-4">
-                <div className="w-10 h-10 bg-zinc-100 dark:bg-zinc-800 rounded-xl flex items-center justify-center text-zinc-900 dark:text-white shadow-inner">
+                <div className="w-10 h-10 bg-white/60 dark:bg-zinc-800 rounded-xl flex items-center justify-center text-zinc-900 dark:text-white shadow-inner">
                   <Film size={20} />
                 </div>
                 <div className="flex flex-col text-zinc-900 dark:text-white">
@@ -1219,7 +1219,7 @@ export default function BatchStudioPanel() {
 
             {/* Viewer */}
             <div
-              className={`flex-1 bg-zinc-100 dark:bg-zinc-950 overflow-hidden relative flex items-center justify-center min-h-[400px] ${zoomMode ? "cursor-grab active:cursor-grabbing" : ""}`}
+              className={`flex-1 bg-white/60 dark:bg-zinc-950 overflow-hidden relative flex items-center justify-center min-h-[400px] ${zoomMode ? "cursor-grab active:cursor-grabbing" : ""}`}
               onMouseDown={handlePanStart}
               onMouseMove={handlePanMove}
               onMouseUp={handlePanEnd}
@@ -1366,7 +1366,7 @@ export default function BatchStudioPanel() {
             )}
 
             {/* Footer */}
-            <div className="p-6 bg-zinc-50 dark:bg-zinc-900 flex flex-col gap-4 px-8 border-t border-zinc-200 dark:border-zinc-800 shrink-0">
+            <div className="p-6 bg-white dark:bg-zinc-900 flex flex-col gap-4 px-8 border-t border-zinc-200 dark:border-zinc-800 shrink-0">
               <div className="flex justify-between items-center">
                 <div className="text-[10px] font-mono font-medium text-zinc-500 uppercase tracking-widest">
                   {currentResult
@@ -1401,3 +1401,4 @@ export default function BatchStudioPanel() {
     </main>
   );
 }
+

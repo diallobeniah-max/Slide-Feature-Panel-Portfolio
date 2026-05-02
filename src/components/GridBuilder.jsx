@@ -358,7 +358,7 @@ export default function GridBuilder() {
             <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setSlideCount((v) => Math.max(1, v - 1))}
-                className="h-9 w-9 shrink-0 rounded-xl border border-zinc-200 bg-zinc-50 font-black text-zinc-500 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 transition-colors"
+                className="h-9 w-9 shrink-0 rounded-xl border border-zinc-200 bg-white font-black text-zinc-500 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 transition-colors"
               >
                 −
               </button>
@@ -367,11 +367,11 @@ export default function GridBuilder() {
                 min={1}
                 value={slideCount}
                 onChange={(e) => setSlideCount(Math.max(1, +e.target.value))}
-                className="w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-center font-mono text-sm font-bold text-zinc-900 outline-none focus:border-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-white"
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-center font-mono text-sm font-bold text-zinc-900 outline-none focus:border-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-white"
               />
               <button
                 onClick={() => setSlideCount((v) => v + 1)}
-                className="h-9 w-9 shrink-0 rounded-xl border border-zinc-200 bg-zinc-50 font-black text-zinc-500 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 transition-colors"
+                className="h-9 w-9 shrink-0 rounded-xl border border-zinc-200 bg-white font-black text-zinc-500 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 transition-colors"
               >
                 +
               </button>
@@ -402,7 +402,7 @@ export default function GridBuilder() {
             onChange={(e) => setLineOpacity(+e.target.value)}
           />
 
-          <div className="grid gap-3 rounded-2xl border border-zinc-200/80 bg-zinc-100/50 p-3 dark:border-zinc-800/80 dark:bg-zinc-950/60">
+          <div className="grid gap-3 rounded-2xl border border-zinc-200/80 bg-white/60/50 p-3 dark:border-zinc-800/80 dark:bg-zinc-950/60">
             <RangeSlider
               label="Preview Zoom"
               valueLabel={`${previewZoom}%`}
@@ -467,7 +467,7 @@ export default function GridBuilder() {
                   className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg transition-colors ${
                     showBg
                       ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950"
-                      : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                      : "bg-white/60 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
                   }`}
                 >
                   {showBg ? "ON" : "OFF"}
@@ -480,7 +480,7 @@ export default function GridBuilder() {
             <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
               Export Mode
             </p>
-            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-zinc-200 bg-zinc-100/70 p-1 dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-zinc-200 bg-white/60/70 p-1 dark:border-zinc-800 dark:bg-zinc-950">
               {exportOptions.map((option) => {
                 const Icon = option.icon;
                 const active = exportMode === option.value;
@@ -533,7 +533,7 @@ export default function GridBuilder() {
             onPointerCancel={handlePanEnd}
             onPointerLeave={handlePanEnd}
             style={{ touchAction: panMode ? "none" : "auto" }}
-            className={`h-[28rem] overflow-auto bg-zinc-100 dark:bg-zinc-950/60 ${
+            className={`h-[28rem] overflow-auto bg-white/60 dark:bg-zinc-950/60 ${
               panMode
                 ? isPanning
                   ? "cursor-grabbing select-none"
@@ -548,7 +548,7 @@ export default function GridBuilder() {
               />
             </div>
           </div>
-          <div className="px-5 py-3 bg-zinc-50 dark:bg-zinc-900/50 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+          <div className="px-5 py-3 bg-white dark:bg-zinc-900/50 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
             <p className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">
               {slideCount} slides horizontal · {slideCount - 1} vertical lines · {lineWeight}px @ {lineOpacity}%
             </p>
@@ -561,3 +561,4 @@ export default function GridBuilder() {
     </main>
   );
 }
+

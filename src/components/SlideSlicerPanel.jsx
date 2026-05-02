@@ -246,7 +246,7 @@ export default function SlideSlicerPanel() {
           </div>
 
           {showPresetForm && (
-            <div className="mt-4 grid gap-3 rounded-2xl border border-zinc-200 p-4 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900/50">
+            <div className="mt-4 grid gap-3 rounded-2xl border border-zinc-200 p-4 bg-white dark:border-zinc-800 dark:bg-zinc-900/50">
               <Input
                 placeholder="Preset name"
                 value={presetDraft.name}
@@ -370,7 +370,7 @@ export default function SlideSlicerPanel() {
           </div>
 
           <div className="mt-6 grid gap-5">
-            <Card className="p-4 shadow-none border-zinc-100 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-800/30">
+            <Card className="p-4 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
               <RangeSlider
                 label="Canvas Zoom"
                 valueLabel={`${Math.round(zoom * 100)}%`}
@@ -425,7 +425,7 @@ export default function SlideSlicerPanel() {
                       className={`rounded-xl py-2.5 text-xs font-black transition-all duration-200 ease-out ${
                         direction === value
                           ? "bg-zinc-950 text-white shadow-sm dark:bg-white dark:text-zinc-950"
-                          : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 dark:text-zinc-400"
+                          : "text-zinc-500 hover:bg-white/60 dark:hover:bg-zinc-800 dark:text-zinc-400"
                       }`}
                     >
                       {label}
@@ -480,7 +480,7 @@ export default function SlideSlicerPanel() {
 
       <section className="grid content-start gap-5">
         <Card
-          className={`grid aspect-video place-items-center overflow-hidden bg-zinc-100 dark:bg-zinc-950/50 border-zinc-200 dark:border-zinc-800 group ${
+          className={`grid aspect-video place-items-center overflow-hidden bg-white/60 dark:bg-zinc-950/50 border-zinc-200 dark:border-zinc-800 group ${
             sourceImage
               ? "cursor-grab active:cursor-grabbing"
               : "dropzone-interactive cursor-pointer"
@@ -564,7 +564,7 @@ export default function SlideSlicerPanel() {
                 <button
                   key={slice}
                   onClick={() => setExpandedSlice({ src: slice, index })}
-                  className="group relative aspect-square overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 text-left shadow-sm card-interactive dark:border-zinc-800 dark:bg-zinc-900"
+                  className="group relative aspect-square overflow-hidden rounded-2xl border border-zinc-200 bg-white text-left shadow-sm card-interactive dark:border-zinc-800 dark:bg-zinc-900"
                 >
                   <img
                     src={slice}
@@ -636,3 +636,4 @@ export default function SlideSlicerPanel() {
     </div>
   );
 }
+

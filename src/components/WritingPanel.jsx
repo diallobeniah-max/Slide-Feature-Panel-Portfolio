@@ -72,7 +72,7 @@ function findMatches(content, searchTerm, caseSensitive, wholeWord) {
 
 function applyInlineMarkdown(value) {
   return value
-    .replace(/`([^`]+)`/g, '<code class="rounded bg-zinc-100 px-1 py-0.5 font-mono text-[0.9em] dark:bg-zinc-800">$1</code>')
+    .replace(/`([^`]+)`/g, '<code class="rounded bg-white/60 px-1 py-0.5 font-mono text-[0.9em] dark:bg-zinc-800">$1</code>')
     .replace(/\*\*([^*]+)\*\*/g, '<strong class="font-black">$1</strong>')
     .replace(/\*([^*\n]+)\*/g, '<em class="italic">$1</em>')
     .replace(/&lt;u&gt;([\s\S]*?)&lt;\/u&gt;/g, '<u class="underline">$1</u>');
@@ -409,7 +409,7 @@ export default function WritingPanel() {
                 className={`inline-flex h-12 items-center justify-center gap-2 rounded-2xl px-4 text-xs font-black uppercase tracking-widest transition ${
                   isMarkdown
                     ? "bg-zinc-950 text-white shadow-md dark:bg-white dark:text-zinc-950"
-                    : "bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                    : "bg-white/60 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
                 }`}
               >
                 <FileText size={15} />
@@ -464,14 +464,14 @@ export default function WritingPanel() {
                 placeholder="Replace with..."
               />
 
-              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-zinc-100 p-1 dark:bg-zinc-900">
+              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-white/60 p-1 dark:bg-zinc-900">
                 <button
                   type="button"
                   onClick={() => setCaseSensitive((value) => !value)}
                   aria-pressed={caseSensitive}
                   className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition ${
                     caseSensitive
-                      ? "bg-white text-zinc-950 shadow-sm dark:bg-zinc-100"
+                      ? "bg-white text-zinc-950 shadow-sm dark:bg-white/60"
                       : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
                   }`}
                 >
@@ -488,7 +488,7 @@ export default function WritingPanel() {
                   aria-pressed={wholeWord}
                   className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition ${
                     wholeWord
-                      ? "bg-white text-zinc-950 shadow-sm dark:bg-zinc-100"
+                      ? "bg-white text-zinc-950 shadow-sm dark:bg-white/60"
                       : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
                   }`}
                 >
@@ -501,7 +501,7 @@ export default function WritingPanel() {
                 </button>
               </div>
 
-              <div className="rounded-xl bg-zinc-50 px-3 py-2 font-mono text-xs text-zinc-500 dark:bg-zinc-950/60 dark:text-zinc-400">
+              <div className="rounded-xl bg-white px-3 py-2 font-mono text-xs text-zinc-500 dark:bg-zinc-950/60 dark:text-zinc-400">
                 {matches.length
                   ? `${currentMatch + 1} of ${matches.length} matches`
                   : searchTerm
@@ -574,7 +574,7 @@ export default function WritingPanel() {
                 <button
                   type="button"
                   onClick={() => insertAtSelection((text) => `**${text}**`, "bold text")}
-                  className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  className="rounded-lg p-2 hover:bg-white/60 dark:hover:bg-zinc-800"
                   title="Bold"
                   aria-label="Bold"
                 >
@@ -583,7 +583,7 @@ export default function WritingPanel() {
                 <button
                   type="button"
                   onClick={() => insertAtSelection((text) => `*${text}*`, "italic text")}
-                  className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  className="rounded-lg p-2 hover:bg-white/60 dark:hover:bg-zinc-800"
                   title="Italic"
                   aria-label="Italic"
                 >
@@ -592,7 +592,7 @@ export default function WritingPanel() {
                 <button
                   type="button"
                   onClick={() => insertAtSelection((text) => `<u>${text}</u>`, "underlined text")}
-                  className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  className="rounded-lg p-2 hover:bg-white/60 dark:hover:bg-zinc-800"
                   title="Underline"
                   aria-label="Underline"
                 >
@@ -610,8 +610,8 @@ export default function WritingPanel() {
                     key={value}
                     type="button"
                     onClick={() => setTextAlign(value)}
-                    className={`rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
-                      textAlign === value ? "bg-zinc-100 dark:bg-zinc-800" : ""
+                    className={`rounded-lg p-2 hover:bg-white/60 dark:hover:bg-zinc-800 ${
+                      textAlign === value ? "bg-white/60 dark:bg-zinc-800" : ""
                     }`}
                     title={label}
                     aria-label={label}
@@ -625,7 +625,7 @@ export default function WritingPanel() {
                 <button
                   type="button"
                   onClick={() => prefixSelectedLines((line) => (line.startsWith("- ") ? line : `- ${line}`))}
-                  className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  className="rounded-lg p-2 hover:bg-white/60 dark:hover:bg-zinc-800"
                   title="Bullet list"
                   aria-label="Bullet list"
                 >
@@ -634,7 +634,7 @@ export default function WritingPanel() {
                 <button
                   type="button"
                   onClick={() => prefixSelectedLines((line, index) => `${index + 1}. ${line.replace(/^\d+\.\s+/, "")}`)}
-                  className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  className="rounded-lg p-2 hover:bg-white/60 dark:hover:bg-zinc-800"
                   title="Numbered list"
                   aria-label="Numbered list"
                 >
@@ -643,7 +643,7 @@ export default function WritingPanel() {
                 <button
                   type="button"
                   onClick={() => prefixSelectedLines((line) => (line.startsWith("> ") ? line : `> ${line}`))}
-                  className="rounded-lg p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  className="rounded-lg p-2 hover:bg-white/60 dark:hover:bg-zinc-800"
                   title="Quote"
                   aria-label="Quote"
                 >
@@ -651,7 +651,7 @@ export default function WritingPanel() {
                 </button>
               </div>
 
-              <div className="ml-auto flex items-center gap-2 rounded-xl bg-zinc-100 px-3 py-2 text-[11px] font-black uppercase tracking-widest text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+              <div className="ml-auto flex items-center gap-2 rounded-xl bg-white/60 px-3 py-2 text-[11px] font-black uppercase tracking-widest text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
                 <Type size={13} />
                 {isPreview ? "Preview" : "Editor"}
               </div>
@@ -679,7 +679,7 @@ export default function WritingPanel() {
             )}
           </div>
 
-          <div className="border-t border-zinc-100 bg-zinc-50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <div className="border-t border-zinc-100 bg-white px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900/50">
             <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-500">
               <div>
                 {wordCount} words / {content.length} characters
@@ -698,3 +698,4 @@ export default function WritingPanel() {
     </div>
   );
 }
+

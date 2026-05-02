@@ -2,7 +2,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 import { createInstagramMiddleware } from './server/instagramApi.mjs';
-import { createYoutubeMiddleware } from './server/youtubeApi.mjs';
+import { createYoutubeMiddleware } from './server/youtube/youtubeRoutes.mjs';
 
 function instagramCaptureApi() {
   return {

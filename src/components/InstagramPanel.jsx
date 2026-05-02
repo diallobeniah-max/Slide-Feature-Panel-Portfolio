@@ -855,7 +855,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
         ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/30 dark:bg-amber-950/20 dark:text-amber-400"
         : phase === "partial"
           ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800/30 dark:bg-sky-950/20 dark:text-sky-400"
-          : "border-zinc-200 bg-zinc-50 text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
+          : "border-zinc-200 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
   const mediaSizing = getMediaSizing(items);
   const activeItem =
     activeViewerIndex === null ? null : items[activeViewerIndex] || null;
@@ -962,7 +962,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
               {mediaSizing && (
                 <div className="mt-3 grid gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
                   <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-xl bg-zinc-50 p-2 dark:bg-zinc-950/50">
+                    <div className="rounded-xl bg-white p-2 dark:bg-zinc-950/50">
                       <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">
                         Ratio
                       </p>
@@ -990,7 +990,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
                       </div>
                     </div>
 
-                    <div className="rounded-xl bg-zinc-50 p-2 dark:bg-zinc-950/50">
+                    <div className="rounded-xl bg-white p-2 dark:bg-zinc-950/50">
                       <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">
                         Size
                       </p>
@@ -1030,7 +1030,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
                         copyDetail("Ratio and size", mediaSizing.combinedText);
                       }
                     }}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-zinc-100 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-700 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-700 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
                   >
                     <Copy size={12} />
                     Copy Both
@@ -1097,7 +1097,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
                   <button
                     type="button"
                     onClick={() => openViewer(index)}
-                    className="group relative aspect-square overflow-hidden rounded-2xl bg-zinc-100 text-left outline-none ring-offset-2 transition-transform hover:scale-[1.015] focus-visible:ring-2 focus-visible:ring-zinc-950 dark:bg-zinc-950 dark:ring-offset-zinc-900 dark:focus-visible:ring-white"
+                    className="group relative aspect-square overflow-hidden rounded-2xl bg-white/60 text-left outline-none ring-offset-2 transition-transform hover:scale-[1.015] focus-visible:ring-2 focus-visible:ring-zinc-950 dark:bg-zinc-950 dark:ring-offset-zinc-900 dark:focus-visible:ring-white"
                     aria-label={`Open ${item.name} preview`}
                   >
                     <img
@@ -1167,7 +1167,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
 
         {!items.length && !loading && (
           <Card className="overflow-hidden">
-            <div className="flex min-h-48 items-center justify-center bg-zinc-100 p-4 dark:bg-zinc-950/60">
+            <div className="flex min-h-48 items-center justify-center bg-white/60 p-4 dark:bg-zinc-950/60">
               <div className="text-center">
                 <div className="icon-float mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
                   <Link className="text-zinc-400 dark:text-zinc-500" size={28} />
@@ -1237,7 +1237,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
             </div>
           </div>
 
-          <div className="grid min-h-0 flex-1 bg-zinc-100 dark:bg-zinc-950 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="grid min-h-0 flex-1 bg-white/60 dark:bg-zinc-950 lg:grid-cols-[minmax(0,1fr)_22rem]">
             <div
               className={`relative flex items-center justify-center overflow-hidden bg-zinc-950 p-4 ${
                 isViewerFullscreen ? "min-h-0" : "min-h-[360px] sm:min-h-[520px]"
@@ -1291,7 +1291,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
                   Media Details
                 </p>
                 <div className="mt-3 grid grid-cols-2 gap-2">
-                  <div className="rounded-2xl bg-zinc-50 p-3 dark:bg-zinc-950/70">
+                  <div className="rounded-2xl bg-white p-3 dark:bg-zinc-950/70">
                     <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">
                       Ratio
                     </p>
@@ -1299,7 +1299,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
                       {formatAspectRatio(activeItem.width, activeItem.height)}
                     </p>
                   </div>
-                  <div className="rounded-2xl bg-zinc-50 p-3 dark:bg-zinc-950/70">
+                  <div className="rounded-2xl bg-white p-3 dark:bg-zinc-950/70">
                     <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">
                       Size
                     </p>
@@ -1310,7 +1310,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
                 </div>
               </div>
 
-              <div className="grid min-h-0 flex-1 gap-3 rounded-3xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/50">
+              <div className="grid min-h-0 flex-1 gap-3 rounded-3xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/50">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
@@ -1411,7 +1411,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
                   key={item.id}
                   type="button"
                   onClick={() => setActiveViewerIndex(index)}
-                  className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border-2 bg-zinc-100 transition dark:bg-zinc-950 ${
+                  className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border-2 bg-white/60 transition dark:bg-zinc-950 ${
                     index === activeViewerIndex
                       ? "border-zinc-950 shadow-lg dark:border-white"
                       : "border-transparent opacity-65 hover:opacity-100"
@@ -1440,3 +1440,4 @@ export default function InstagramPanel({ initialUrl = "" }) {
     </>
   );
 }
+

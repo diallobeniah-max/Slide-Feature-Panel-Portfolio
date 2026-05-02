@@ -17,7 +17,7 @@ import InstagramPanel from "./components/InstagramPanel.jsx";
 import GridBuilder from "./components/GridBuilder.jsx";
 import SpellChecker from "./components/SpellChecker.jsx";
 import WritingPanel from "./components/WritingPanel.jsx";
-import YouTubePanel from "./components/YouTubePanel.jsx";
+import YouTubePanel from "./components/youtube/YouTubePanel.jsx";
 import Notifications, { playChime } from "./components/Notifications.jsx";
 
 const iconProps = { strokeWidth: 1.75 };
@@ -135,7 +135,7 @@ function SettingsPopover({
             </div>
 
             {/* Custom slider */}
-            <div className="rounded-2xl border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/50">
+            <div className="rounded-2xl border border-zinc-100 bg-white/50 p-4 dark:border-zinc-800 dark:bg-zinc-950/50">
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2 text-zinc-500">
                   <Type size={13} />
@@ -184,7 +184,7 @@ function SettingsPopover({
                   className={`flex items-center justify-between rounded-2xl border px-3 py-2.5 transition-all ${
                     val
                       ? "border-zinc-950 bg-zinc-950 text-white dark:border-white dark:bg-white dark:text-zinc-950"
-                      : "border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
+                      : "border-zinc-200 bg-white/50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400"
                   }`}
                 >
                   <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest">
@@ -378,12 +378,12 @@ export default function App() {
 
   return (
     <div
-      className="min-h-screen bg-zinc-50 text-zinc-950 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-50"
+      className="min-h-screen bg-[#f8f5ef] text-zinc-950 transition-colors duration-300 dark:bg-zinc-950 dark:text-zinc-50"
       onWheelCapture={handleShellWheel}
     >
       {/* ── Header ─────────────────────────────────────────────── */}
       <header
-        className={`sticky top-0 z-40 border-b border-zinc-200/70 bg-zinc-50/90 backdrop-blur-xl backdrop-saturate-150 transition-all duration-300 ease-out dark:border-zinc-800/70 dark:bg-zinc-950/90 ${
+        className={`sticky top-0 z-40 border-b border-zinc-200/70 bg-[#f8f5ef]/90 backdrop-blur-xl backdrop-saturate-150 transition-all duration-300 ease-out dark:border-zinc-800/70 dark:bg-zinc-950/90 ${
           isHeaderCompact ? "shadow-lg shadow-black/5 dark:shadow-black/30" : ""
         }`}
       >
@@ -458,7 +458,7 @@ export default function App() {
 
         {/* Mobile tab bar */}
         <div
-          className={`flex gap-1 border-t border-zinc-100 px-4 transition-all duration-300 md:hidden dark:border-zinc-800 ${
+          className={`flex gap-1 border-t border-zinc-100 px-4 transition-all duration-300 md:hidden dark:border-zinc-800 overflow-x-auto no-scrollbar ${
             isHeaderCompact ? "py-1.5" : "py-2"
           }`}
         >
@@ -466,7 +466,7 @@ export default function App() {
             <button
               key={value}
               onClick={() => switchTab(value)}
-              className={`flex-1 rounded-xl px-2 font-black uppercase tracking-widest transition-all duration-200 ${
+              className={`shrink-0 rounded-xl px-3 font-black uppercase tracking-widest transition-all duration-200 ${
                 isHeaderCompact ? "py-1.5 text-[9px]" : "py-2 text-[10px]"
               }
                 ${

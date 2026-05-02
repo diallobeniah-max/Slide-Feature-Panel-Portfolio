@@ -3,7 +3,7 @@ import React from "react";
 export function Card({ children, className = "", ...props }) {
   return (
     <div
-      className={`bg-zinc-50/95 dark:bg-zinc-900/95 border border-zinc-200/80 dark:border-zinc-800/80 rounded-[24px] shadow-sm shadow-zinc-950/5 dark:shadow-black/20 overflow-hidden transition-all duration-300 ${className}`}
+      className={`bg-white/95 dark:bg-zinc-900/95 border border-zinc-200/50 dark:border-zinc-800/80 rounded-[24px] shadow-sm shadow-zinc-950/5 dark:shadow-black/20 overflow-hidden transition-all duration-300 ${className}`}
       {...props}
     >
       {children}
@@ -29,11 +29,11 @@ export function Button({
     primary:
       "bg-zinc-950 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 shadow-md hover:shadow-lg",
     secondary:
-      "bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 shadow-sm",
+      "bg-white/60 text-zinc-900 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 shadow-sm",
     outline:
       "border border-zinc-200 text-zinc-700 hover:border-zinc-950 hover:text-zinc-950 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-white dark:hover:text-white bg-transparent",
     ghost:
-      "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50",
+      "text-zinc-600 hover:bg-white/60 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50",
     danger:
       "bg-red-500 text-white hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 shadow-sm",
   };
@@ -114,7 +114,7 @@ export function Input({
         max={max}
         step={step}
         onWheel={handleWheel}
-        className="w-full px-4 py-3 rounded-2xl border border-zinc-200 bg-zinc-50 text-sm text-zinc-900 transition-all focus:border-zinc-950 focus:bg-white focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-white dark:focus:bg-zinc-900 dark:focus:ring-white/5 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-medium"
+        className="w-full px-4 py-3 rounded-2xl border border-zinc-200 bg-white/70 text-sm text-zinc-900 transition-all focus:border-zinc-950 focus:bg-white focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-white dark:focus:bg-zinc-900 dark:focus:ring-white/5 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-medium shadow-inner-sm"
         {...props}
       />
     </div>
@@ -124,7 +124,7 @@ export function Input({
 export function Badge({ children, variant = "default", className = "" }) {
   const variants = {
     default:
-      "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700",
+      "bg-white/60 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700",
     success:
       "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50",
     warning:
@@ -164,7 +164,7 @@ export function RangeSlider({
             </label>
           )}
           {valueLabel && (
-            <span className="text-[10px] font-mono font-bold text-zinc-900 dark:text-zinc-100 bg-zinc-100 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
+            <span className="text-[10px] font-mono font-bold text-zinc-900 dark:text-zinc-100 bg-white/60 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
               {valueLabel}
             </span>
           )}
@@ -183,3 +183,4 @@ export function RangeSlider({
     </div>
   );
 }
+

@@ -66,3 +66,4 @@ function TrimSlider({ min, max, start, end, onChange, onBlur }) {
     </div>
   );
 }
+
