@@ -33,7 +33,7 @@ const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'\".,!?;:-()/#& ";
 
 function normalizeInstagramUrl(value) {
-  const trimmed = value.trim();
+  const trimmed = String(value || "").trim();
   if (!trimmed) return "";
 
   try {
@@ -508,11 +508,11 @@ async function imageToOcrSources(url) {
 
 export default function InstagramPanel({ initialUrl = "" }) {
   const [postUrl, setPostUrl] = useState(initialUrl);
+  const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [items, setItems] = useState([]);
-  const [postMeta, setPostMeta] = useState(null);
   const [phase, setPhase] = useState("idle");
   const [phaseMsg, setPhaseMsg] = useState("");
+  const [activePostId, setActivePostId] = useState(null);
   const [activeViewerIndex, setActiveViewerIndex] = useState(null);
   const [ocrById, setOcrById] = useState({});
   const [ocrLoadingId, setOcrLoadingId] = useState(null);
@@ -520,12 +520,42 @@ export default function InstagramPanel({ initialUrl = "" }) {
   const [isViewerFullscreen, setIsViewerFullscreen] = useState(false);
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkText, setBulkText] = useState("");
+  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
+  const [downloadOptions, setDownloadOptions] = useState({ format: 'PNG', scope: 'everything', organize: 'separate' });
+  const [igHistory, setIgHistory] = useState(() => {
+    try {
+      const saved = localStorage.getItem("ig-history");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [expandedHistoryId, setExpandedHistoryId] = useState(null);
   const inputRef = useRef(null);
   const loadedUrlRef = useRef("");
   const abortRef = useRef(null);
   const sidebarCardRef = useRef(null);
   const ocrTextRef = useRef(null);
   const [mediaHeight, setMediaHeight] = useState(null);
+
+  useEffect(() => {
+    localStorage.setItem("ig-history", JSON.stringify(igHistory));
+  }, [igHistory]);
+
+  const addToHistory = (post) => {
+    setIgHistory(prev => {
+      const filtered = prev.filter(h => h.url !== post.url);
+      const entry = {
+        id: post.id,
+        url: post.url,
+        username: post.meta?.ownerUsername || post.meta?.shortcode || "unknown",
+        mediaCount: post.items.length,
+        thumbnail: post.items[0]?.previewUrl || "",
+        date: Date.now()
+      };
+      return [entry, ...filtered].slice(0, 50);
+    });
+  };
 
   useEffect(() => {
     const node = sidebarCardRef.current;
@@ -547,33 +577,27 @@ export default function InstagramPanel({ initialUrl = "" }) {
     };
   }, []);
 
-  async function loadPost(urlValue = postUrl) {
+  async function loadPost(urlValue) {
     const normalized = normalizeInstagramUrl(urlValue);
     if (!normalized) {
       setPhase("failed");
-      setPhaseMsg("Paste a valid Instagram post, reel, or carousel link.");
+      setPhaseMsg("Paste a valid Instagram link.");
       return;
     }
 
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    if (posts.some(p => p.url === normalized)) {
+      setPhase("failed");
+      setPhaseMsg("This link is already added.");
+      return;
+    }
 
-    loadedUrlRef.current = normalized;
-    setPostUrl(normalized);
     setLoading(true);
-    setItems([]);
-    setPostMeta(null);
-    setActiveViewerIndex(null);
-    setIsViewerFullscreen(false);
-    setOcrById({});
     setPhase("loading");
-    setPhaseMsg("Loading carousel media...");
+    setPhaseMsg("Loading media...");
 
     try {
       const response = await fetch(
-        `/api/instagram-carousel?url=${encodeURIComponent(normalized)}`,
-        { signal: controller.signal },
+        `/api/instagram-carousel?url=${encodeURIComponent(normalized)}`
       );
 
       if (!response.ok) {
@@ -583,25 +607,26 @@ export default function InstagramPanel({ initialUrl = "" }) {
       const data = await response.json();
       const mediaItems = Array.isArray(data.items) ? data.items : [];
       if (!mediaItems.length) {
-        throw new Error("No downloadable carousel media was found.");
+        throw new Error("No media found.");
       }
 
-      setItems(mediaItems);
-      setPostMeta(data.post || null);
+      const newPost = {
+        id: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2),
+        url: normalized,
+        meta: data.post || null,
+        items: mediaItems,
+        expanded: true,
+        selectedIds: mediaItems.map(i => i.id)
+      };
+
+      setPosts(prev => [newPost, ...prev]);
+      addToHistory(newPost);
       setPhase("done");
-      setPhaseMsg(
-        `${mediaItems.length} item${mediaItems.length === 1 ? "" : "s"} ready for download.`,
-      );
-      notify(
-        "Carousel Ready",
-        `${mediaItems.length} Instagram item${mediaItems.length === 1 ? "" : "s"} loaded.`,
-      );
+      setPhaseMsg("Post added successfully.");
+      notify("Added", "Instagram post loaded.");
     } catch (error) {
-      if (error.name === "AbortError") return;
-      setItems([]);
-      setPostMeta(null);
       setPhase("failed");
-      setPhaseMsg(error.message || "Instagram blocked extraction.");
+      setPhaseMsg(error.message || "Failed to load.");
     } finally {
       setLoading(false);
     }
@@ -610,28 +635,38 @@ export default function InstagramPanel({ initialUrl = "" }) {
   async function processMultipleUrls(urls) {
     setLoading(true);
     setPhase("loading");
-    setPhaseMsg(`Loading ${urls.length} links...`);
-    let allItems = [];
-    let lastPostMeta = null;
+    setPhaseMsg(`Processing ${urls.length} links...`);
     
+    let successCount = 0;
     for (const url of urls) {
+      if (posts.some(p => p.url === url)) continue;
+      
       try {
         const response = await fetch(`/api/instagram-carousel?url=${encodeURIComponent(url)}`);
         if (response.ok) {
           const data = await response.json();
           const mediaItems = Array.isArray(data.items) ? data.items : [];
-          allItems = [...allItems, ...mediaItems];
-          if (data.post) lastPostMeta = data.post;
+          if (mediaItems.length) {
+            const newPost = {
+              id: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2),
+              url,
+              meta: data.post || null,
+              items: mediaItems,
+              expanded: false,
+              selectedIds: mediaItems.map(i => i.id)
+            };
+            setPosts(prev => [newPost, ...prev]);
+            addToHistory(newPost);
+            successCount++;
+          }
         }
       } catch (e) {
         console.error("Failed to load", url, e);
       }
     }
     
-    setItems(allItems);
-    if (lastPostMeta) setPostMeta(lastPostMeta);
     setPhase("done");
-    setPhaseMsg(`${allItems.length} items ready for download.`);
+    setPhaseMsg(`Successfully added ${successCount} posts.`);
     setLoading(false);
   }
 
@@ -642,26 +677,25 @@ export default function InstagramPanel({ initialUrl = "" }) {
 
   useEffect(() => {
     const normalized = normalizeInstagramUrl(postUrl);
-    if (!normalized || normalized === loadedUrlRef.current || loading) return;
+    if (!normalized || loading) return;
 
-    const timer = window.setTimeout(() => {
-      loadPost(normalized);
-    }, 450);
-
-    return () => window.clearTimeout(timer);
+    // No auto-load here to avoid spamming the user while they type
   }, [postUrl, loading]);
+
+  const activePost = posts.find(p => p.id === activePostId);
+  const activeItems = activePost?.items || [];
 
   useEffect(() => {
     if (activeViewerIndex === null) return;
-    if (!items.length) {
+    if (!activeItems.length) {
       setActiveViewerIndex(null);
       setIsViewerFullscreen(false);
       return;
     }
-    if (activeViewerIndex > items.length - 1) {
-      setActiveViewerIndex(items.length - 1);
+    if (activeViewerIndex > activeItems.length - 1) {
+      setActiveViewerIndex(activeItems.length - 1);
     }
-  }, [activeViewerIndex, items.length]);
+  }, [activeViewerIndex, activeItems.length]);
 
   useEffect(() => {
     if (activeViewerIndex === null) return undefined;
@@ -682,7 +716,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeViewerIndex, items.length]);
+  }, [activeViewerIndex, activeItems.length]);
 
   useEffect(() => {
     if (activeViewerIndex === null) return undefined;
@@ -735,8 +769,8 @@ export default function InstagramPanel({ initialUrl = "" }) {
 
   function moveViewer(direction) {
     setActiveViewerIndex((current) => {
-      if (current === null || !items.length) return current;
-      return (current + direction + items.length) % items.length;
+      if (current === null || !activeItems.length) return current;
+      return (current + direction + activeItems.length) % activeItems.length;
     });
   }
 
@@ -787,60 +821,151 @@ export default function InstagramPanel({ initialUrl = "" }) {
   }
 
   async function downloadAll() {
-    if (!items.length) return;
+    const { format, scope, organize } = downloadOptions;
+    if (!posts.length) return;
 
     setPhase("loading");
-    setPhaseMsg("Building ZIP file...");
+    setPhaseMsg("Building download package...");
 
     const zip = new JSZip();
     const failed = [];
+    
+    // Determine which items to download
+    let downloadQueue = [];
+    if (scope === 'selected-item') {
+      if (activeItem) downloadQueue = [{ item: activeItem, post: activePost }];
+    } else if (scope === 'selected-carousel') {
+      if (activePost) {
+        downloadQueue = activePost.items
+          .filter(i => activePost.selectedIds.includes(i.id))
+          .map(i => ({ item: i, post: activePost }));
+      }
+    } else if (scope === 'all-carousels') {
+      posts.forEach(post => {
+        post.items
+          .filter(i => post.selectedIds.includes(i.id))
+          .forEach(i => downloadQueue.push({ item: i, post }));
+      });
+    } else { // 'everything'
+      posts.forEach(post => {
+        post.items.map(i => downloadQueue.push({ item: i, post }));
+      });
+    }
 
-    for (const item of items) {
+    if (!downloadQueue.length) {
+      setPhase("failed");
+      setPhaseMsg("No items selected for download.");
+      return;
+    }
+
+
+    const rootFolder = zip.folder("Instagram_Downloads");
+
+    for (const { item, post } of downloadQueue) {
+      const postIndex = posts.findIndex(p => p.id === post.id);
+      const postLabel = `link_${String(postIndex + 1).padStart(2, "0")}`;
+      const username = post.meta?.ownerUsername || "unknown";
+      const shortcode = post.meta?.shortcode || post.id.substring(0, 8);
+      
+      const folderName = `${postLabel}_${username}_${shortcode}`;
+      const extension = item.type === "video" ? "mp4" : format.toLowerCase();
+      const fileName = `${String(item.index + 1).padStart(2, "0")}.${extension}`;
+      
+      const targetZip = organize === 'separate' ? rootFolder.folder(folderName) : rootFolder;
+      const finalName = organize === 'separate' ? fileName : `${folderName}_${fileName}`;
+
       try {
         const response = await fetch(item.downloadUrl);
         if (!response.ok) throw new Error();
-        zip.file(item.name, await response.blob());
+        const blob = await response.blob();
+        targetZip.file(finalName, blob);
       } catch {
-        failed.push(item);
+        failed.push(`${postLabel} - ${item.name}`);
       }
     }
 
     if (failed.length) {
-      zip.file(
-        "failed_downloads.txt",
-        failed
-          .map((item) => `${item.name}: ${item.mediaUrl || item.downloadUrl}`)
-          .join("\n"),
-      );
+      zip.file("failed_downloads.txt", `Failed items:\n${failed.join("\n")}`);
     }
 
     const bundle = await zip.generateAsync({ type: "blob" });
-    downloadBlob(bundle, `instagram_carousel_${Date.now()}.zip`);
+    downloadBlob(bundle, `instagram_export_${Date.now()}.zip`);
 
     setPhase(failed.length ? "partial" : "done");
-    setPhaseMsg(
-      failed.length
-        ? `ZIP downloaded with ${failed.length} failed item${failed.length === 1 ? "" : "s"} listed inside.`
-        : "ZIP downloaded.",
-    );
+    setPhaseMsg(failed.length ? `Exported with ${failed.length} failures.` : "Export complete.");
+    setDownloadMenuOpen(false);
   }
 
-  function deleteOne(id) {
-    setItems((current) => current.filter((item) => item.id !== id));
+  function deleteOne(postId, itemId) {
+    setPosts(prev => prev.map(p => {
+      if (p.id !== postId) return p;
+      return {
+        ...p,
+        items: p.items.filter(i => i.id !== itemId),
+        selectedIds: p.selectedIds.filter(id => id !== itemId)
+      };
+    }).filter(p => p.items.length > 0));
+    
     setOcrById((current) => {
       const next = { ...current };
-      delete next[id];
+      delete next[itemId];
       return next;
     });
   }
 
+  function deletePost(postId) {
+    setPosts(prev => prev.filter(p => p.id !== postId));
+  }
+
+  function togglePostExpansion(postId) {
+    setPosts(prev => prev.map(p => p.id === postId ? { ...p, expanded: !p.expanded } : p));
+  }
+
+  function toggleItemSelection(postId, itemId) {
+    setPosts(prev => prev.map(p => {
+      if (p.id !== postId) return p;
+      const isSelected = p.selectedIds.includes(itemId);
+      return {
+        ...p,
+        selectedIds: isSelected 
+          ? p.selectedIds.filter(id => id !== itemId)
+          : [...p.selectedIds, itemId]
+      };
+    }));
+  }
+
+  function togglePostSelection(postId) {
+    setPosts(prev => prev.map(p => {
+      if (p.id !== postId) return p;
+      const allSelected = p.selectedIds.length === p.items.length;
+      return {
+        ...p,
+        selectedIds: allSelected ? [] : p.items.map(i => i.id)
+      };
+    }));
+  }
+
+  function selectAllGlobal() {
+    setPosts(prev => prev.map(p => ({
+      ...p,
+      selectedIds: p.items.map(i => i.id)
+    })));
+  }
+
+  function clearSelectionGlobal() {
+    setPosts(prev => prev.map(p => ({
+      ...p,
+      selectedIds: []
+    })));
+  }
+
+  const totalSelectedCount = posts.reduce((sum, p) => sum + p.selectedIds.length, 0);
+
   function clearAll() {
-    abortRef.current?.abort();
-    loadedUrlRef.current = "";
+    setPosts([]);
     setPostUrl("");
     setBulkText("");
-    setItems([]);
-    setPostMeta(null);
+    setActivePostId(null);
     setActiveViewerIndex(null);
     setIsViewerFullscreen(false);
     setOcrById({});
@@ -849,6 +974,11 @@ export default function InstagramPanel({ initialUrl = "" }) {
     setPhase("idle");
     setPhaseMsg("");
     setLoading(false);
+  }
+
+  function clearHistory() {
+    setIgHistory([]);
+    localStorage.removeItem("ig-history");
   }
 
   async function copyDetail(label, value, sourceRef) {
@@ -887,9 +1017,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
         : phase === "partial"
           ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800/30 dark:bg-sky-950/20 dark:text-sky-400"
           : "border-zinc-200 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
-  const mediaSizing = getMediaSizing(items);
-  const activeItem =
-    activeViewerIndex === null ? null : items[activeViewerIndex] || null;
+  const activeItem = activeViewerIndex === null ? null : activeItems[activeViewerIndex] || null;
   const activeOcr = activeItem ? ocrById[activeItem.id] : null;
   const activeOcrText = activeOcr?.text || "";
   const isReadingActive = activeItem && ocrLoadingId === activeItem.id;
@@ -917,7 +1045,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
                   onChange={(event) => setPostUrl(event.target.value)}
                   onPaste={handlePaste}
                   onKeyDown={(event) => {
-                    if (event.key === "Enter") loadPost();
+                    if (event.key === "Enter") loadPost(postUrl);
                   }}
                   placeholder="https://www.instagram.com/p/..."
                   className="flex-1"
@@ -989,7 +1117,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
                       setBulkText("");
                     }
                   } else {
-                    loadPost();
+                    loadPost(postUrl);
                   }
                 }}
               >
@@ -1004,7 +1132,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
               <Button
                 icon={X}
                 variant="secondary"
-                disabled={(!postUrl && !items.length && !bulkText)}
+                disabled={(!postUrl && !posts.length && !bulkText)}
                 onClick={clearAll}
               >
                 Clear
@@ -1027,123 +1155,239 @@ export default function InstagramPanel({ initialUrl = "" }) {
             </div>
           )}
 
-          {postMeta && (
-            <div className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800">
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-[11px] font-black text-zinc-900 dark:text-zinc-100">
-                    {postMeta.ownerUsername
-                      ? `@${postMeta.ownerUsername}`
-                      : postMeta.shortcode}
-                  </p>
-                  <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-zinc-400">
-                    {postMeta.source} extraction
-                  </p>
-                </div>
-                <Badge variant={postMeta.type === "reel" ? "warning" : "default"}>
-                  {postMeta.type === "reel" ? (
-                    <>
-                      <Film size={10} /> Reel
-                    </>
-                  ) : (
-                    <>
-                      <Layers size={10} /> Post
-                    </>
-                  )}
-                </Badge>
+          {posts.length > 0 && (
+            <div className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30">
+              <div className="flex items-center justify-between">
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Active Queue</p>
+                <Badge variant="black">{posts.length} Post{posts.length === 1 ? '' : 's'}</Badge>
               </div>
+              <div className="mt-2 flex -space-x-2 overflow-hidden">
+                {posts.slice(0, 5).map((p, i) => (
+                  <div key={p.id} className="inline-block h-6 w-6 rounded-full ring-2 ring-white dark:ring-zinc-900 overflow-hidden bg-zinc-200 dark:bg-zinc-800">
+                    {p.items[0] && <img src={p.items[0].previewUrl} alt="" className="h-full w-full object-cover" />}
+                  </div>
+                ))}
+                {posts.length > 5 && <div className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 text-[8px] font-bold text-zinc-500 ring-2 ring-white dark:ring-zinc-900">+{posts.length - 5}</div>}
+              </div>
+            </div>
+          )}
 
-              {mediaSizing && (
-                <div className="mt-3 grid gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="rounded-xl bg-white p-2 dark:bg-zinc-950/50">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">
-                        Ratio
-                      </p>
-                      <div className="mt-1 flex items-center justify-between gap-2">
-                        <span className="font-mono text-[11px] font-black text-zinc-900 dark:text-zinc-100">
-                          {mediaSizing.ratio}
-                        </span>
-                        <button
-                          type="button"
-                          onPointerDown={() => {
-                            copyDetail("Aspect ratio", mediaSizing.ratio);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              copyDetail("Aspect ratio", mediaSizing.ratio);
-                            }
-                          }}
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white text-zinc-500 shadow-sm transition-colors hover:text-zinc-950 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-white"
-                          title="Copy aspect ratio"
-                          aria-label="Copy aspect ratio"
-                        >
-                          <Copy size={13} />
-                        </button>
+          {posts.length > 0 && !loading && (
+            <div className="relative">
+              <Button 
+                icon={FileArchive} 
+                onClick={() => setDownloadMenuOpen(!downloadMenuOpen)} 
+                className="w-full"
+              >
+                Download All...
+              </Button>
+              
+              {downloadMenuOpen && typeof document !== "undefined" && createPortal(
+                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
+                  <div 
+                    className="absolute inset-0 bg-zinc-950/40 backdrop-blur-sm" 
+                    onClick={() => setDownloadMenuOpen(false)}
+                  />
+                  <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-[0_30px_70px_rgba(0,0,0,0.3)] overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-8 duration-500">
+                    <div className="flex items-center justify-between p-8 pb-4">
+                      <div>
+                        <h4 className="text-lg font-black tracking-tight text-zinc-900 dark:text-zinc-100">Export Options</h4>
+                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1">{totalSelectedCount} items ready for batch</p>
                       </div>
+                      <Button 
+                        variant="secondary" 
+                        size="icon" 
+                        onClick={() => setDownloadMenuOpen(false)}
+                        className="h-10 w-10 rounded-full bg-zinc-100 dark:bg-zinc-800 border-none"
+                        icon={X}
+                      />
                     </div>
 
-                    <div className="rounded-xl bg-white p-2 dark:bg-zinc-950/50">
-                      <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">
-                        Size
-                      </p>
-                      <div className="mt-1 flex items-center justify-between gap-2">
-                        <span className="font-mono text-[11px] font-black text-zinc-900 dark:text-zinc-100">
-                          W {mediaSizing.width} · H {mediaSizing.height}
-                        </span>
-                        <button
-                          type="button"
-                          onPointerDown={() => {
-                            copyDetail("Width and height", mediaSizing.sizeText);
-                          }}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter" || event.key === " ") {
-                              event.preventDefault();
-                              copyDetail("Width and height", mediaSizing.sizeText);
-                            }
-                          }}
-                          className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white text-zinc-500 shadow-sm transition-colors hover:text-zinc-950 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-white"
-                          title="Copy width and height"
-                          aria-label="Copy width and height"
+                    <div className="p-8 pt-4 space-y-8">
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-4 ml-1">Export Format</p>
+                        <div className="grid grid-cols-3 gap-3">
+                          {['PNG', 'JPEG', 'PSD'].map(f => {
+                            const isPSD = f === 'PSD';
+                            return (
+                              <div key={f} className="relative group">
+                                <button
+                                  disabled={isPSD}
+                                  onClick={() => setDownloadOptions(prev => ({ ...prev, format: f }))}
+                                  className={`w-full px-2 py-4 rounded-2xl text-xs font-black transition-all ${
+                                    isPSD ? 'opacity-40 cursor-not-allowed bg-zinc-50 dark:bg-zinc-800/50 grayscale' :
+                                    downloadOptions.format === f ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 shadow-xl scale-[1.02]' : 
+                                    'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white'
+                                  }`}
+                                >
+                                  {f}
+                                </button>
+                                {isPSD && (
+                                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 pointer-events-none transition-all transform group-hover:-translate-y-1">
+                                    <span className="bg-zinc-900 text-white text-[8px] px-3 py-1.5 rounded-full whitespace-nowrap shadow-2xl font-black uppercase tracking-widest ring-4 ring-white/10">Not available</span>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-4 ml-1">Download Scope</p>
+                        <div className="space-y-2">
+                          {[
+                            { id: 'everything', label: 'All Loaded Media', sub: 'Downloads every post in the current list' },
+                            { id: 'all-carousels', label: 'All Selected Items', sub: `${totalSelectedCount} items manually checked`, count: totalSelectedCount },
+                            { id: 'selected-carousel', label: 'Current Carousel Only', sub: 'Ignores other posts in the queue' },
+                          ].map(s => (
+                            <button
+                              key={s.id}
+                              onClick={() => setDownloadOptions(prev => ({ ...prev, scope: s.id }))}
+                              className={`w-full text-left px-5 py-4 rounded-[24px] transition-all border-2 ${
+                                downloadOptions.scope === s.id 
+                                  ? 'bg-zinc-50 dark:bg-zinc-800/50 border-zinc-950 dark:border-white text-zinc-900 dark:text-zinc-100 shadow-sm' 
+                                  : 'bg-transparent border-zinc-100 dark:border-zinc-800 text-zinc-500 hover:border-zinc-300 dark:hover:border-zinc-600'
+                              }`}
+                            >
+                              <div className="flex justify-between items-center">
+                                <div>
+                                  <p className="text-xs font-black">{s.label}</p>
+                                  <p className="text-[9px] font-medium opacity-60 mt-0.5">{s.sub}</p>
+                                </div>
+                                {s.count !== undefined && (
+                                  <Badge variant="black" className="px-2 py-0.5 text-[9px] font-black">{s.count}</Badge>
+                                )}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-4 ml-1">File Organization</p>
+                        <div className="flex bg-zinc-100 dark:bg-zinc-800 p-2 rounded-[24px] gap-2">
+                          {[
+                            { id: 'separate', label: 'Folder Mode', sub: 'Nested' },
+                            { id: 'flat', label: 'Flat List', sub: 'Single level' },
+                          ].map(o => (
+                            <button
+                              key={o.id}
+                              onClick={() => setDownloadOptions(prev => ({ ...prev, organize: o.id }))}
+                              className={`flex-1 py-3 rounded-[18px] transition-all ${
+                                downloadOptions.organize === o.id 
+                                  ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-lg scale-[1.02]' 
+                                  : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
+                              }`}
+                            >
+                              <p className="text-[10px] font-black">{o.label}</p>
+                              <p className="text-[8px] opacity-60 font-bold uppercase tracking-tighter">{o.sub}</p>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="pt-2">
+                        <Button 
+                          onClick={downloadAll} 
+                          className="w-full py-7 rounded-[28px] text-base font-black shadow-2xl shadow-zinc-950/20" 
+                          size="lg"
+                          disabled={loading || (downloadOptions.scope === 'all-carousels' && totalSelectedCount === 0)}
                         >
-                          <Copy size={13} />
-                        </button>
+                          Start Batch Download
+                        </Button>
                       </div>
                     </div>
                   </div>
-
-                  <button
-                    type="button"
-                    onPointerDown={() => {
-                      copyDetail("Ratio and size", mediaSizing.combinedText);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        copyDetail("Ratio and size", mediaSizing.combinedText);
-                      }
-                    }}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-700 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-                  >
-                    <Copy size={12} />
-                    Copy Both
-                  </button>
-                </div>
+                </div>,
+                document.body
               )}
             </div>
           )}
 
-          {items.length > 0 && !loading && (
-            <Button icon={FileArchive} onClick={downloadAll} className="w-full">
-              Download ZIP
-            </Button>
+          {igHistory.length > 0 && (
+            <div className="mt-2 pt-5 border-t border-zinc-100 dark:border-zinc-800">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2 text-zinc-500">
+                  <RefreshCw size={12} className="opacity-70" />
+                  <p className="text-[10px] font-black uppercase tracking-widest">Recent Downloads</p>
+                </div>
+                <button 
+                  onClick={clearHistory}
+                  className="text-[9px] font-black uppercase tracking-widest text-zinc-400 hover:text-red-500 transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+              
+              <div className="space-y-3 max-h-[320px] overflow-y-auto pr-2 custom-scrollbar">
+                {igHistory.map((h) => {
+                  const isExpanded = expandedHistoryId === h.id;
+                  return (
+                    <div key={h.id} className="flex flex-col gap-2 pb-3 border-b border-zinc-100/50 dark:border-zinc-800/50 last:border-0 last:pb-0">
+                      <div 
+                        className="flex gap-3 items-center cursor-pointer group"
+                        onClick={() => setExpandedHistoryId(isExpanded ? null : h.id)}
+                      >
+                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 ring-1 ring-zinc-200/50 dark:ring-zinc-700/50">
+                          {h.thumbnail ? (
+                            <img src={h.thumbnail} alt="" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                          ) : (
+                            <div className="flex h-full w-full items-center justify-center text-zinc-400">
+                              <ImageIcon size={14} />
+                            </div>
+                          )}
+                          <div className="absolute bottom-0 right-0 bg-black/60 px-1 rounded-tl-md">
+                            <p className="text-[7px] font-black text-white">{h.mediaCount}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[11px] font-black text-zinc-800 dark:text-zinc-200 group-hover:text-zinc-950 dark:group-hover:text-white transition-colors">
+                            @{h.username}
+                          </p>
+                          <p className="mt-0.5 text-[9px] font-medium text-zinc-400">
+                            {new Date(h.date).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+
+                      {isExpanded && (
+                        <div className="flex gap-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setPostUrl(h.url);
+                              loadPost(h.url);
+                            }}
+                            className="flex-1 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-[9px] font-black uppercase tracking-widest text-zinc-600 dark:text-zinc-300 transition-all flex items-center justify-center gap-2"
+                          >
+                            <RefreshCw size={10} />
+                            Re-Load
+                          </button>
+                          <a
+                            href={h.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="flex-1 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-[9px] font-black uppercase tracking-widest text-zinc-600 dark:text-zinc-300 transition-all flex items-center justify-center gap-2"
+                          >
+                            <Link size={10} />
+                            Visit
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           )}
         </Card>
       </aside>
 
       <section className="grid content-start gap-5 panel-enter-main">
-        {loading && !items.length && (
+        {loading && !posts.length && (
           <Card
             className="flex flex-col p-5 lg:overflow-hidden"
             style={mediaHeight ? { height: `${mediaHeight}px` } : undefined}
@@ -1165,101 +1409,148 @@ export default function InstagramPanel({ initialUrl = "" }) {
           </Card>
         )}
 
-        {items.length > 0 && (
-          <Card
-            className="flex flex-col p-5 lg:overflow-hidden"
-            style={mediaHeight ? { height: `${mediaHeight}px` } : undefined}
-          >
-            <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                  Extracted Media
-                </p>
-                <h3 className="mt-0.5 text-xl font-black italic tracking-tight text-zinc-900 dark:text-zinc-50">
-                  {items.length} item{items.length === 1 ? "" : "s"}
-                </h3>
+        {posts.length > 0 && (
+          <div className="flex flex-col gap-5">
+            <div className="flex items-center justify-between px-2">
+              <div className="flex items-center gap-3">
+                <Badge variant="black">{posts.length} Posts</Badge>
+                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{totalSelectedCount} items selected</span>
               </div>
-              <Badge variant="success">Ready</Badge>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={selectAllGlobal}>Select All</Button>
+                <Button variant="secondary" size="sm" onClick={clearSelectionGlobal}>Clear</Button>
+              </div>
             </div>
 
-            <div className="grid min-h-0 gap-3 overflow-y-auto pr-1 lg:flex-1 lg:overscroll-contain">
-              {items.map((item, index) => (
-                <div
-                  key={item.id}
-                  className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-[9rem_1fr_auto]"
-                >
-                  <button
-                    type="button"
-                    onClick={() => openViewer(index)}
-                    className="group relative aspect-square overflow-hidden rounded-2xl bg-white/60 text-left outline-none ring-offset-2 transition-transform hover:scale-[1.015] focus-visible:ring-2 focus-visible:ring-zinc-950 dark:bg-zinc-950 dark:ring-offset-zinc-900 dark:focus-visible:ring-white"
-                    aria-label={`Open ${item.name} preview`}
-                  >
-                    <img
-                      src={item.previewUrl}
-                      alt=""
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                    <span className="absolute inset-x-3 bottom-3 inline-flex items-center justify-center gap-1.5 rounded-xl bg-black/70 px-2 py-1.5 text-[9px] font-black uppercase tracking-widest text-white opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                      <ImageIcon size={11} />
-                      Expand
-                    </span>
-                    {item.type === "video" && (
-                      <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-lg bg-black/70 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-white backdrop-blur-md">
-                        <Film size={10} />
-                        Video
-                      </span>
-                    )}
-                  </button>
-
-                  <div className="grid content-center gap-2">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="black">
-                        {String(item.index + 1).padStart(2, "0")}
-                      </Badge>
-                      <Badge variant={item.type === "video" ? "warning" : "default"}>
-                        {item.type === "video" ? (
-                          <>
-                            <Film size={10} /> Video
-                          </>
-                        ) : (
-                          <>
-                            <ImageIcon size={10} /> Image
-                          </>
-                        )}
-                      </Badge>
+            <div className="space-y-6 max-h-[72vh] overflow-y-auto pr-2 custom-scrollbar pb-8">
+              {posts.map((post) => (
+                <Card key={post.id} className="flex flex-col p-5 overflow-hidden group/card relative">
+                  <div className="flex shrink-0 items-center justify-between gap-3 mb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="relative">
+                        <div className="h-12 w-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden ring-2 ring-zinc-100 dark:ring-zinc-800">
+                          {post.items[0] && <img src={post.items[0].previewUrl} alt="" className="h-full w-full object-cover" />}
+                        </div>
+                        <button
+                          onClick={() => togglePostSelection(post.id)}
+                          className={`absolute -top-1 -right-1 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all ${
+                            post.selectedIds.length === post.items.length 
+                            ? 'bg-zinc-950 border-zinc-950 text-white dark:bg-white dark:border-white dark:text-zinc-950' 
+                            : 'bg-white border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700'
+                          }`}
+                        >
+                          {post.selectedIds.length === post.items.length && <div className="h-2 w-2 bg-current rounded-full" />}
+                        </button>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-black text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                          @{post.meta?.ownerUsername || post.meta?.shortcode || "Instagram Post"}
+                          {post.selectedIds.length > 0 && <span className="text-[10px] text-zinc-400 font-normal">({post.selectedIds.length}/{post.items.length})</span>}
+                        </h3>
+                        <p className="font-mono text-[9px] uppercase tracking-widest text-zinc-400">
+                          {post.items.length} item{post.items.length === 1 ? "" : "s"} · {post.meta?.source || "External"}
+                        </p>
+                      </div>
                     </div>
-                    <p className="break-all text-sm font-black text-zinc-900 dark:text-zinc-100">
-                      {item.name}
-                    </p>
-                    <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
-                      {formatDimensions(item)}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <Button 
+                        variant={post.expanded ? "primary" : "secondary"}
+                        size="sm" 
+                        onClick={() => togglePostExpansion(post.id)}
+                        icon={post.expanded ? Minimize2 : Maximize2}
+                        className="rounded-xl"
+                      >
+                        {post.expanded ? "Collapse" : "Expand"}
+                      </Button>
+                      <Button
+                        variant="danger"
+                        size="icon"
+                        icon={Trash2}
+                        onClick={() => deletePost(post.id)}
+                        className="rounded-xl"
+                      />
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2 sm:flex-col sm:justify-center">
-                    <Button
-                      icon={Download}
-                      size="icon"
-                      onClick={() => downloadOne(item)}
-                      title="Download"
-                      aria-label={`Download ${item.name}`}
-                    />
-                    <Button
-                      icon={Trash2}
-                      size="icon"
-                      variant="danger"
-                      onClick={() => deleteOne(item.id)}
-                      title="Delete"
-                      aria-label={`Delete ${item.name}`}
-                    />
-                  </div>
-                </div>
+                  {post.expanded && (
+                    <div className="grid gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
+                      {post.items.map((item, index) => (
+                        <div
+                          key={item.id}
+                          className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-[9rem_1fr_auto]"
+                        >
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActivePostId(post.id);
+                              openViewer(index);
+                            }}
+                            className="group relative aspect-square overflow-hidden rounded-2xl bg-white/60 text-left outline-none ring-offset-2 transition-transform hover:scale-[1.015] focus-visible:ring-2 focus-visible:ring-zinc-950 dark:bg-zinc-950 dark:ring-offset-zinc-900 dark:focus-visible:ring-white"
+                            aria-label={`Open ${item.name} preview`}
+                          >
+                            <img
+                              src={item.previewUrl}
+                              alt=""
+                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                            />
+                            <span className="absolute inset-x-3 bottom-3 inline-flex items-center justify-center gap-1.5 rounded-xl bg-black/70 px-2 py-1.5 text-[9px] font-black uppercase tracking-widest text-white opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                              <ImageIcon size={11} />
+                              Expand
+                            </span>
+                          </button>
+
+                          <div className="grid content-center gap-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                onClick={() => toggleItemSelection(post.id, item.id)}
+                                className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors ${
+                                  post.selectedIds.includes(item.id) 
+                                  ? 'bg-zinc-950 border-zinc-950 text-white dark:bg-white dark:border-white dark:text-zinc-950' 
+                                  : 'border-zinc-200 dark:border-zinc-800'
+                                }`}
+                              >
+                                {post.selectedIds.includes(item.id) && <div className="h-2 w-2 bg-current rounded-full" />}
+                              </button>
+                              <Badge variant="black">
+                                {String(item.index + 1).padStart(2, "0")}
+                              </Badge>
+                              <Badge variant={item.type === "video" ? "warning" : "default"}>
+                                {item.type === "video" ? <Film size={10} /> : <ImageIcon size={10} />}
+                                <span className="ml-1">{item.type}</span>
+                              </Badge>
+                            </div>
+                            <p className="break-all text-sm font-black text-zinc-900 dark:text-zinc-100">
+                              {item.name}
+                            </p>
+                            <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
+                              {formatDimensions(item)}
+                            </p>
+                          </div>
+
+                          <div className="flex items-center gap-2 sm:flex-col sm:justify-center">
+                            <Button
+                              icon={Download}
+                              size="icon"
+                              onClick={() => downloadOne(item)}
+                            />
+                            <Button
+                              icon={Trash2}
+                              size="icon"
+                              variant="danger"
+                              onClick={() => deleteOne(post.id, item.id)}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </Card>
               ))}
             </div>
-          </Card>
+          </div>
         )}
 
-        {!items.length && !loading && (
+        {!posts.length && !loading && (
           <Card className="overflow-hidden">
             <div className="flex min-h-48 items-center justify-center bg-white/60 p-4 dark:bg-zinc-950/60">
               <div className="text-center">
@@ -1310,7 +1601,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
             <div className="flex items-center gap-2">
               <Badge variant={activeItem.type === "video" ? "warning" : "default"}>
                 {String((activeViewerIndex || 0) + 1).padStart(2, "0")} /{" "}
-                {String(items.length).padStart(2, "0")}
+                {String(activeItems.length).padStart(2, "0")}
               </Badge>
               <Button
                 icon={isViewerFullscreen ? Minimize2 : Maximize2}
@@ -1337,7 +1628,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
                 isViewerFullscreen ? "min-h-0" : "min-h-[360px] sm:min-h-[520px]"
               }`}
             >
-              {items.length > 1 && (
+              {activeItems.length > 1 && (
                 <>
                   <button
                     type="button"
@@ -1500,7 +1791,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
 
           <div className="shrink-0 border-t border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
             <div className="flex gap-3 overflow-x-auto pb-1">
-              {items.map((item, index) => (
+              {activeItems.map((item, index) => (
                 <button
                   key={item.id}
                   type="button"
