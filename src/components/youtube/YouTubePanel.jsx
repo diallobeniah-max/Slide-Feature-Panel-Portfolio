@@ -132,11 +132,8 @@ export default function YouTubePanel() {
   };
 
   const addBulkUrls = async () => {
-    // Extract all URLs using regex
-    const urlRegex = /(https?:\/\/[^\s<)"]+)/g;
-    const matches = bulkText.match(urlRegex) || [];
-    // Clean and filter uniquely valid YouTube URLs
-    const urls = [...new Set(matches.map(u => u.trim()).filter(isValidYoutubeUrl))];
+    const rawUrls = bulkText.split(/[\n,\s]+/).map(u => u.trim()).filter(Boolean);
+    const urls = [...new Set(rawUrls)].filter(isValidYoutubeUrl);
 
     if (urls.length === 0) {
       window.dispatchEvent(new CustomEvent("studio-notify", {
@@ -192,7 +189,8 @@ export default function YouTubePanel() {
     // Save to history
     const histItem = {
       id: crypto.randomUUID(), title: item.title, date: new Date().toISOString(),
-      quality: item.quality, format: ext, length: (item.trimEnd || item.duration) - item.trimStart
+      quality: item.quality, format: ext, length: (item.trimEnd || item.duration) - item.trimStart,
+      url: item.url, thumbnail: item.thumbnail
     };
     const newHist = [histItem, ...history];
     setHistory(newHist);
@@ -304,8 +302,8 @@ export default function YouTubePanel() {
               </button>
             </div>
 
-            {!bulkMode ? (
-              <div className="space-y-3">
+            <div className="space-y-3 relative transition-all duration-300">
+              {!bulkMode ? (
                 <div className="relative flex items-center w-full">
                   <input type="url" placeholder="Paste YouTube URL..."
                     value={urlInput} onChange={e => setUrlInput(e.target.value)}
@@ -317,32 +315,61 @@ export default function YouTubePanel() {
                     <Clipboard size={16} />
                   </button>
                 </div>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <Button variant="primary" size="sm" className="flex-1 w-full justify-center" onClick={() => addSingleUrl()}
-                    disabled={isAdding || !urlInput.trim()}>
-                    {isAdding ? <><Loader2 size={16} className="mr-2 animate-spin"/> Fetching...</> : <><Plus size={16} className="mr-2"/> Fetch Info</>}
-                  </Button>
-                  <Button variant="outline" size="sm" className="w-full sm:w-auto justify-center" onClick={() => setBulkMode(true)}>
-                    <List size={16} className="mr-2" /> Bulk
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <textarea rows={5} placeholder="Paste multiple YouTube URLs (one per line)..."
+              ) : (
+                <textarea rows={5} placeholder="Paste multiple YouTube URLs here (newlines, commas, or spaces)..."
                   value={bulkText} onChange={e => setBulkText(e.target.value)}
-                  className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 transition-all focus:border-zinc-500 focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:focus:ring-white/5 font-mono resize-none shadow-inner-sm" />
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <Button variant="primary" size="sm" className="flex-1 w-full justify-center" onClick={addBulkUrls}
-                    disabled={isAdding}>
-                    {isAdding ? <><Loader2 size={16} className="mr-2 animate-spin"/> Processing...</> : <><Plus size={16} className="mr-2"/> Add All</>}
-                  </Button>
-                  <Button variant="outline" size="sm" className="w-full sm:w-auto justify-center" onClick={() => setBulkMode(false)}>
-                    <X size={16} className="mr-2" /> Cancel
-                  </Button>
-                </div>
+                  className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 transition-all focus:border-zinc-500 focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:focus:ring-white/5 font-mono resize-none shadow-inner-sm min-h-[120px]" />
+              )}
+
+              {bulkMode && bulkText.trim().length > 0 && (() => {
+                const urls = bulkText.split(/[\n,\s]+/).map(u => u.trim()).filter(Boolean);
+                const uniqueUrls = [...new Set(urls)];
+                const parsedUrls = uniqueUrls.map(url => ({
+                  url,
+                  valid: isValidYoutubeUrl(url)
+                }));
+                const validCount = parsedUrls.filter(p => p.valid).length;
+                const invalidUrls = parsedUrls.filter(p => !p.valid).map(p => p.url);
+
+                return (
+                  <div className="flex flex-col gap-2 p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                      <span>{parsedUrls.length} total</span>
+                      <div className="flex gap-3">
+                        <span className="text-emerald-600 dark:text-emerald-400">{validCount} valid</span>
+                        {invalidUrls.length > 0 && <span className="text-red-600 dark:text-red-400">{invalidUrls.length} invalid</span>}
+                      </div>
+                    </div>
+                    {invalidUrls.length > 0 && (
+                      <div className="text-xs text-red-500 font-mono overflow-y-auto max-h-24 pr-1 custom-scrollbar">
+                        <p className="font-bold mb-1 uppercase tracking-widest text-[9px]">Invalid links:</p>
+                        {invalidUrls.map((url, i) => (
+                          <div key={i} className="truncate line-through opacity-70 mb-0.5">{url}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <Button variant="primary" size="sm" className="flex-1 w-full justify-center" 
+                  onClick={() => {
+                    if (bulkMode) {
+                      addBulkUrls();
+                      setBulkMode(false);
+                    } else {
+                      addSingleUrl();
+                    }
+                  }}
+                  disabled={(!bulkMode && (!urlInput.trim() || isAdding)) || (bulkMode && (!bulkText.trim() || isAdding))}>
+                  {isAdding ? <><Loader2 size={16} className="mr-2 animate-spin"/> {bulkMode ? 'Processing...' : 'Fetching...'}</> : <><Plus size={16} className="mr-2"/> {bulkMode ? 'Add All' : 'Fetch Info'}</>}
+                </Button>
+                <Button variant={bulkMode ? "primary" : "outline"} size="sm" className="w-full sm:w-auto justify-center" onClick={() => setBulkMode(!bulkMode)}>
+                  {bulkMode ? 'Single Link' : <><List size={16} className="mr-2" /> Bulk</>}
+                </Button>
               </div>
-            )}
+            </div>
           </div>
 
           {/* Batch actions */}
@@ -363,7 +390,7 @@ export default function YouTubePanel() {
         </Card>
 
         {/* History Section */}
-        <DownloadHistory history={history} clearHistory={clearHistory} />
+        <DownloadHistory history={history} clearHistory={clearHistory} onReDownload={addSingleUrl} />
       </aside>
 
       {/* ── Right: Queue ─────────────────────────────────── */}

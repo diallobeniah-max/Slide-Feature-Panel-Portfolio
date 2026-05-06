@@ -15,6 +15,7 @@ const notify = (title, message, type = "success") =>
 const iconProps = { strokeWidth: 1.75 };
 
 export default function GridBuilder() {
+  const [activeTab, setActiveTab] = useState("builder"); // "builder" | "presets"
   /* ── Canvas config ────────────────────────────────────────────── */
   const [slideWidth, setSlideWidth] = useState(1080);
   const [slideHeight, setSlideHeight] = useState(1080);
@@ -279,238 +280,263 @@ export default function GridBuilder() {
     <main className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[22em_1fr] items-start">
       {/* ── Sidebar ───────────────────────────────────────────────── */}
       <aside className="grid content-start gap-5 panel-enter-aside">
-        {/* Dimension Presets */}
-        <Card className="p-5 flex flex-col gap-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                Dimension Presets
-              </p>
-              <p className="mt-0.5 font-mono text-[10px] font-bold text-zinc-400">
-                {slideWidth}×{slideHeight}px per slide · {slideWidth * slideCount}×{slideHeight}px total
-              </p>
-            </div>
+        <Card className="p-0 overflow-hidden flex flex-col">
+          <div className="flex bg-zinc-100/50 dark:bg-zinc-900/50 border-b border-zinc-200 dark:border-zinc-800 p-1.5 gap-1.5">
+            <button
+              onClick={() => setActiveTab("builder")}
+              className={`flex-1 text-xs py-2 rounded-lg font-bold uppercase tracking-widest transition-all ${
+                activeTab === "builder"
+                  ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }`}
+            >
+              Grid Builder
+            </button>
+            <button
+              onClick={() => setActiveTab("presets")}
+              className={`flex-1 text-xs py-2 rounded-lg font-bold uppercase tracking-widest transition-all ${
+                activeTab === "presets"
+                  ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }`}
+            >
+              Presets
+            </button>
           </div>
 
-          {/* Custom presets */}
-          {customPresets.length > 0 && (
-            <div className="grid grid-cols-2 gap-2">
-              {customPresets.map((p) => (
-                <PresetBtn key={p.id} preset={p} />
-              ))}
-            </div>
-          )}
-
-          {/* Static presets by category */}
-          <div className="max-h-[15em] overflow-y-auto space-y-4 pr-0.5">
-            {STATIC_PRESETS.map((group) => {
-              const Icon = group.icon.type;
-              return (
-                <div key={group.category}>
-                  <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
-                    <Icon size={13} {...iconProps} /> {group.category}
+          <div className="p-5">
+            <div className={`flex flex-col gap-4 ${activeTab === "presets" ? "block" : "hidden"}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                    Dimension Presets
                   </p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {group.items.map((p) => (
-                      <PresetBtn
-                        key={`${group.category}-${p.name}`}
-                        preset={p}
-                      />
-                    ))}
+                  <p className="mt-0.5 font-mono text-[10px] font-bold text-zinc-400">
+                    {slideWidth}×{slideHeight}px per slide · {slideWidth * slideCount}×{slideHeight}px total
+                  </p>
+                </div>
+              </div>
+
+              {/* Custom presets */}
+              {customPresets.length > 0 && (
+                <div className="grid grid-cols-2 gap-2">
+                  {customPresets.map((p) => (
+                    <PresetBtn key={p.id} preset={p} />
+                  ))}
+                </div>
+              )}
+
+              {/* Static presets by category */}
+              <div className="max-h-[15em] overflow-y-auto space-y-4 pr-0.5">
+                {STATIC_PRESETS.map((group) => {
+                  const Icon = group.icon.type;
+                  return (
+                    <div key={group.category}>
+                      <p className="flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">
+                        <Icon size={13} {...iconProps} /> {group.category}
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {group.items.map((p) => (
+                          <PresetBtn
+                            key={`${group.category}-${p.name}`}
+                            preset={p}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Manual size */}
+              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                <Input
+                  label="Slide Width px"
+                  type="number"
+                  value={slideWidth}
+                  onChange={(e) => setSlideWidth(Math.max(1, +e.target.value))}
+                />
+                <Input
+                  label="Slide Height px"
+                  type="number"
+                  value={slideHeight}
+                  onChange={(e) => setSlideHeight(Math.max(1, +e.target.value))}
+                />
+              </div>
+            </div>
+
+            <div className={`flex flex-col gap-5 ${activeTab === "builder" ? "block" : "hidden"}`}>
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                  Grid Builder
+                </p>
+                <h2 className="mt-1 text-2xl font-black italic tracking-tight text-zinc-900 dark:text-zinc-50">
+                  Slide Number
+                </h2>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                  Number of Slides
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setSlideCount((v) => Math.max(1, v - 1))}
+                    className="h-9 w-9 shrink-0 rounded-xl border border-zinc-200 bg-white font-black text-zinc-500 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    −
+                  </button>
+                  <input
+                    type="number"
+                    min={1}
+                    value={slideCount}
+                    onChange={(e) => setSlideCount(Math.max(1, +e.target.value))}
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-center font-mono text-sm font-bold text-zinc-900 outline-none focus:border-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-white"
+                  />
+                  <button
+                    onClick={() => setSlideCount((v) => v + 1)}
+                    className="h-9 w-9 shrink-0 rounded-xl border border-zinc-200 bg-white font-black text-zinc-500 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
+                <p className="text-[9px] font-medium text-zinc-400">
+                  Canvas {slideWidth * slideCount}×{slideHeight}px · {slideCount} slide{slideCount !== 1 ? "s" : ""}
+                </p>
+              </div>
+
+              {/* Line style */}
+              <RangeSlider
+                label="Line Weight"
+                valueLabel={`${lineWeight}px`}
+                min={0.5}
+                max={10}
+                step={0.5}
+                value={lineWeight}
+                onChange={(e) => setLineWeight(+e.target.value)}
+              />
+
+              <RangeSlider
+                label="Line Opacity"
+                valueLabel={`${lineOpacity}%`}
+                min={5}
+                max={100}
+                step={5}
+                value={lineOpacity}
+                onChange={(e) => setLineOpacity(+e.target.value)}
+              />
+
+              <div className="grid gap-3 rounded-2xl border border-zinc-200/80 bg-white/60/50 p-3 dark:border-zinc-800/80 dark:bg-zinc-950/60">
+                <RangeSlider
+                  label="Preview Zoom"
+                  valueLabel={`${previewZoom}%`}
+                  min={50}
+                  max={300}
+                  step={10}
+                  value={previewZoom}
+                  onChange={(e) => setPreviewZoom(Number(e.target.value))}
+                />
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant={panMode ? "primary" : "secondary"}
+                    size="sm"
+                    icon={Hand}
+                    onClick={() => setPanMode((value) => !value)}
+                  >
+                    Hand Tool
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    icon={RotateCcw}
+                    onClick={resetPreviewView}
+                  >
+                    Reset View
+                  </Button>
+                </div>
+              </div>
+
+              {/* Colors */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                    Line Color
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={lineColor}
+                      onChange={(e) => setLineColor(e.target.value)}
+                      className="h-9 w-14 cursor-pointer rounded-xl border border-zinc-200 dark:border-zinc-800 p-0.5 bg-transparent"
+                    />
+                    <span className="font-mono text-[10px] text-zinc-400">
+                      {lineColor}
+                    </span>
                   </div>
                 </div>
-              );
-            })}
-          </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                    Background
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="color"
+                      value={bgColor}
+                      onChange={(e) => setBgColor(e.target.value)}
+                      disabled={!showBg}
+                      className="h-9 w-14 cursor-pointer rounded-xl border border-zinc-200 dark:border-zinc-800 p-0.5 bg-transparent disabled:opacity-30"
+                    />
+                    <button
+                      onClick={() => setShowBg((v) => !v)}
+                      className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg transition-colors ${
+                        showBg
+                          ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950"
+                          : "bg-white/60 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                      }`}
+                    >
+                      {showBg ? "ON" : "OFF"}
+                    </button>
+                  </div>
+                </div>
+              </div>
 
-          {/* Manual size */}
-          <div className="grid grid-cols-2 gap-3 pt-3 border-t border-zinc-100 dark:border-zinc-800">
-            <Input
-              label="Slide Width px"
-              type="number"
-              value={slideWidth}
-              onChange={(e) => setSlideWidth(Math.max(1, +e.target.value))}
-            />
-            <Input
-              label="Slide Height px"
-              type="number"
-              value={slideHeight}
-              onChange={(e) => setSlideHeight(Math.max(1, +e.target.value))}
-            />
-          </div>
-        </Card>
+              <div className="grid gap-2">
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                  Export Mode
+                </p>
+                <div className="grid grid-cols-3 gap-2 rounded-2xl border border-zinc-200 bg-white/60/70 p-1 dark:border-zinc-800 dark:bg-zinc-950">
+                  {exportOptions.map((option) => {
+                    const Icon = option.icon;
+                    const active = exportMode === option.value;
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setExportMode(option.value)}
+                        className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[10px] font-black uppercase tracking-widest transition ${
+                          active
+                            ? "bg-zinc-950 text-white shadow-sm dark:bg-white dark:text-zinc-950"
+                            : "text-zinc-500 hover:bg-white hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-white"
+                        }`}
+                      >
+                        <Icon size={13} />
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-        {/* Slide Grid Config */}
-        <Card className="p-5 flex flex-col gap-5">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-              Grid Builder
-            </p>
-            <h2 className="mt-1 text-2xl font-black italic tracking-tight text-zinc-900 dark:text-zinc-50">
-              Slide Number
-            </h2>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-              Number of Slides
-            </label>
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={() => setSlideCount((v) => Math.max(1, v - 1))}
-                className="h-9 w-9 shrink-0 rounded-xl border border-zinc-200 bg-white font-black text-zinc-500 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 transition-colors"
-              >
-                −
-              </button>
-              <input
-                type="number"
-                min={1}
-                value={slideCount}
-                onChange={(e) => setSlideCount(Math.max(1, +e.target.value))}
-                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-center font-mono text-sm font-bold text-zinc-900 outline-none focus:border-zinc-950 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-white"
-              />
-              <button
-                onClick={() => setSlideCount((v) => v + 1)}
-                className="h-9 w-9 shrink-0 rounded-xl border border-zinc-200 bg-white font-black text-zinc-500 hover:bg-zinc-200 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:bg-zinc-800 transition-colors"
-              >
-                +
-              </button>
-            </div>
-            <p className="text-[9px] font-medium text-zinc-400">
-              Canvas {slideWidth * slideCount}×{slideHeight}px · {slideCount} slide{slideCount !== 1 ? "s" : ""}
-            </p>
-          </div>
-
-          {/* Line style */}
-          <RangeSlider
-            label="Line Weight"
-            valueLabel={`${lineWeight}px`}
-            min={0.5}
-            max={10}
-            step={0.5}
-            value={lineWeight}
-            onChange={(e) => setLineWeight(+e.target.value)}
-          />
-
-          <RangeSlider
-            label="Line Opacity"
-            valueLabel={`${lineOpacity}%`}
-            min={5}
-            max={100}
-            step={5}
-            value={lineOpacity}
-            onChange={(e) => setLineOpacity(+e.target.value)}
-          />
-
-          <div className="grid gap-3 rounded-2xl border border-zinc-200/80 bg-white/60/50 p-3 dark:border-zinc-800/80 dark:bg-zinc-950/60">
-            <RangeSlider
-              label="Preview Zoom"
-              valueLabel={`${previewZoom}%`}
-              min={50}
-              max={300}
-              step={10}
-              value={previewZoom}
-              onChange={(e) => setPreviewZoom(Number(e.target.value))}
-            />
-            <div className="grid grid-cols-2 gap-2">
               <Button
-                variant={panMode ? "primary" : "secondary"}
-                size="sm"
-                icon={Hand}
-                onClick={() => setPanMode((value) => !value)}
+                icon={Download}
+                size="lg"
+                className="w-full"
+                onClick={exportGrid}
               >
-                Hand Tool
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                icon={RotateCcw}
-                onClick={resetPreviewView}
-              >
-                Reset View
+                Export Grid as {exportMode.toUpperCase()}
               </Button>
             </div>
           </div>
-
-          {/* Colors */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                Line Color
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={lineColor}
-                  onChange={(e) => setLineColor(e.target.value)}
-                  className="h-9 w-14 cursor-pointer rounded-xl border border-zinc-200 dark:border-zinc-800 p-0.5 bg-transparent"
-                />
-                <span className="font-mono text-[10px] text-zinc-400">
-                  {lineColor}
-                </span>
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                Background
-              </label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={bgColor}
-                  onChange={(e) => setBgColor(e.target.value)}
-                  disabled={!showBg}
-                  className="h-9 w-14 cursor-pointer rounded-xl border border-zinc-200 dark:border-zinc-800 p-0.5 bg-transparent disabled:opacity-30"
-                />
-                <button
-                  onClick={() => setShowBg((v) => !v)}
-                  className={`text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-lg transition-colors ${
-                    showBg
-                      ? "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950"
-                      : "bg-white/60 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
-                  }`}
-                >
-                  {showBg ? "ON" : "OFF"}
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid gap-2">
-            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-              Export Mode
-            </p>
-            <div className="grid grid-cols-3 gap-2 rounded-2xl border border-zinc-200 bg-white/60/70 p-1 dark:border-zinc-800 dark:bg-zinc-950">
-              {exportOptions.map((option) => {
-                const Icon = option.icon;
-                const active = exportMode === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setExportMode(option.value)}
-                    className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[10px] font-black uppercase tracking-widest transition ${
-                      active
-                        ? "bg-zinc-950 text-white shadow-sm dark:bg-white dark:text-zinc-950"
-                        : "text-zinc-500 hover:bg-white hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900 dark:hover:text-white"
-                    }`}
-                  >
-                    <Icon size={13} />
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <Button
-            icon={Download}
-            size="lg"
-            className="w-full"
-            onClick={exportGrid}
-          >
-            Export Grid as {exportMode.toUpperCase()}
-          </Button>
         </Card>
       </aside>
 

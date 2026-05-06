@@ -518,6 +518,8 @@ export default function InstagramPanel({ initialUrl = "" }) {
   const [ocrLoadingId, setOcrLoadingId] = useState(null);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [isViewerFullscreen, setIsViewerFullscreen] = useState(false);
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkText, setBulkText] = useState("");
   const inputRef = useRef(null);
   const loadedUrlRef = useRef("");
   const abortRef = useRef(null);
@@ -603,6 +605,34 @@ export default function InstagramPanel({ initialUrl = "" }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function processMultipleUrls(urls) {
+    setLoading(true);
+    setPhase("loading");
+    setPhaseMsg(`Loading ${urls.length} links...`);
+    let allItems = [];
+    let lastPostMeta = null;
+    
+    for (const url of urls) {
+      try {
+        const response = await fetch(`/api/instagram-carousel?url=${encodeURIComponent(url)}`);
+        if (response.ok) {
+          const data = await response.json();
+          const mediaItems = Array.isArray(data.items) ? data.items : [];
+          allItems = [...allItems, ...mediaItems];
+          if (data.post) lastPostMeta = data.post;
+        }
+      } catch (e) {
+        console.error("Failed to load", url, e);
+      }
+    }
+    
+    setItems(allItems);
+    if (lastPostMeta) setPostMeta(lastPostMeta);
+    setPhase("done");
+    setPhaseMsg(`${allItems.length} items ready for download.`);
+    setLoading(false);
   }
 
   useEffect(() => {
@@ -808,6 +838,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
     abortRef.current?.abort();
     loadedUrlRef.current = "";
     setPostUrl("");
+    setBulkText("");
     setItems([]);
     setPostMeta(null);
     setActiveViewerIndex(null);
@@ -877,45 +908,108 @@ export default function InstagramPanel({ initialUrl = "" }) {
             </h2>
           </div>
 
-          <div className="flex gap-2">
-            <Input
-              ref={inputRef}
-              value={postUrl}
-              onChange={(event) => setPostUrl(event.target.value)}
-              onPaste={handlePaste}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") loadPost();
-              }}
-              placeholder="https://www.instagram.com/p/..."
-              className="flex-1"
-              aria-label="Instagram link"
-            />
-            <Button
-              icon={Clipboard}
-              variant="secondary"
-              size="icon"
-              onClick={pasteAndLoad}
-              title="Paste and load"
-              aria-label="Paste and load Instagram link"
-            />
-          </div>
+          <div className="flex flex-col gap-3">
+            <div className="flex gap-2 relative transition-all duration-300">
+              {!bulkMode ? (
+                <Input
+                  ref={inputRef}
+                  value={postUrl}
+                  onChange={(event) => setPostUrl(event.target.value)}
+                  onPaste={handlePaste}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") loadPost();
+                  }}
+                  placeholder="https://www.instagram.com/p/..."
+                  className="flex-1"
+                  aria-label="Instagram link"
+                />
+              ) : (
+                <textarea
+                  value={bulkText}
+                  onChange={(event) => setBulkText(event.target.value)}
+                  placeholder="Paste multiple Instagram URLs here (newlines, commas, or spaces)..."
+                  className="flex-1 px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 transition-all focus:border-zinc-500 focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:focus:ring-white/5 font-mono resize-none shadow-inner-sm min-h-[120px]"
+                />
+              )}
+              {!bulkMode && (
+                <Button
+                  icon={Clipboard}
+                  variant="secondary"
+                  size="icon"
+                  onClick={pasteAndLoad}
+                  title="Paste and load"
+                  aria-label="Paste and load Instagram link"
+                />
+              )}
+            </div>
+            
+            {bulkMode && bulkText.trim().length > 0 && (() => {
+              const urls = bulkText.split(/[\n,\s]+/).map(u => u.trim()).filter(Boolean);
+              const uniqueUrls = [...new Set(urls)];
+              const parsedUrls = uniqueUrls.map(url => ({
+                url,
+                valid: normalizeInstagramUrl(url) !== ""
+              }));
+              const validCount = parsedUrls.filter(p => p.valid).length;
+              const invalidUrls = parsedUrls.filter(p => !p.valid).map(p => p.url);
 
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              icon={loading ? Loader2 : RefreshCw}
-              disabled={!postUrl || loading}
-              onClick={() => loadPost()}
-            >
-              {loading ? "Loading" : "Load"}
-            </Button>
-            <Button
-              icon={X}
-              variant="secondary"
-              disabled={!postUrl && !items.length}
-              onClick={clearAll}
-            >
-              Clear
-            </Button>
+              return (
+                <div className="flex flex-col gap-2 p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                    <span>{parsedUrls.length} total</span>
+                    <div className="flex gap-3">
+                      <span className="text-emerald-600 dark:text-emerald-400">{validCount} valid</span>
+                      {invalidUrls.length > 0 && <span className="text-red-600 dark:text-red-400">{invalidUrls.length} invalid</span>}
+                    </div>
+                  </div>
+                  {invalidUrls.length > 0 && (
+                    <div className="text-xs text-red-500 font-mono overflow-y-auto max-h-24 pr-1 custom-scrollbar">
+                      <p className="font-bold mb-1 uppercase tracking-widest text-[9px]">Invalid links:</p>
+                      {invalidUrls.map((url, i) => (
+                        <div key={i} className="truncate line-through opacity-70 mb-0.5">{url}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            
+            <div className="flex gap-2">
+              <Button
+                className="flex-1"
+                icon={loading ? Loader2 : RefreshCw}
+                disabled={(!bulkMode && !postUrl) || (bulkMode && !bulkText) || loading}
+                onClick={() => {
+                  if (bulkMode) {
+                    const urls = bulkText.split(/[\n,\s]+/).map(u => u.trim()).filter(Boolean);
+                    const validUrls = [...new Set(urls)].filter(u => normalizeInstagramUrl(u) !== "");
+                    if (validUrls.length > 0) {
+                      processMultipleUrls(validUrls);
+                      setBulkMode(false);
+                      setBulkText("");
+                    }
+                  } else {
+                    loadPost();
+                  }
+                }}
+              >
+                {loading ? "Loading" : "Load"}
+              </Button>
+              <Button
+                variant={bulkMode ? "primary" : "secondary"}
+                onClick={() => setBulkMode(!bulkMode)}
+              >
+                {bulkMode ? "Single Link" : "Bulk Add"}
+              </Button>
+              <Button
+                icon={X}
+                variant="secondary"
+                disabled={(!postUrl && !items.length && !bulkText)}
+                onClick={clearAll}
+              >
+                Clear
+              </Button>
+            </div>
           </div>
 
           {phaseMsg && (

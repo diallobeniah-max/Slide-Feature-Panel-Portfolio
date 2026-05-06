@@ -22,6 +22,7 @@ import {
 const iconProps = { strokeWidth: 1.75 };
 
 export default function SlideSlicerPanel() {
+  const [activeTab, setActiveTab] = useState("slicer"); // "slicer" | "presets"
   const [sourceImage, setSourceImage] = useState(null);
   const [slideWidth, setSlideWidth] = useState(1080);
   const [slideHeight, setSlideHeight] = useState(1080);
@@ -222,244 +223,271 @@ export default function SlideSlicerPanel() {
   return (
     <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[24em_1fr]">
       <aside className="grid content-start gap-5">
-        <Card className="order-2 p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
-                Dimension Presets
-              </p>
-              <p className="mt-1 font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                {slideWidth}x{slideHeight}px
-              </p>
-            </div>
-            <Button
-              size="sm"
-              icon={Plus}
-              variant="secondary"
-              onClick={() => {
-                setPresetDraft({ name: "", w: slideWidth, h: slideHeight });
-                setShowPresetForm((value) => !value);
-              }}
+        <Card className="p-0 overflow-hidden flex flex-col">
+          <div className="flex bg-zinc-100/50 dark:bg-zinc-900/50 border-b border-zinc-200 dark:border-zinc-800 p-1.5 gap-1.5">
+            <button
+              onClick={() => setActiveTab("slicer")}
+              className={`flex-1 text-xs py-2 rounded-lg font-bold uppercase tracking-widest transition-all ${
+                activeTab === "slicer"
+                  ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }`}
             >
-              Add
-            </Button>
+              Slide Slicer
+            </button>
+            <button
+              onClick={() => setActiveTab("presets")}
+              className={`flex-1 text-xs py-2 rounded-lg font-bold uppercase tracking-widest transition-all ${
+                activeTab === "presets"
+                  ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+              }`}
+            >
+              Presets
+            </button>
           </div>
 
-          {showPresetForm && (
-            <div className="mt-4 grid gap-3 rounded-2xl border border-zinc-200 p-4 bg-white dark:border-zinc-800 dark:bg-zinc-900/50">
-              <Input
-                placeholder="Preset name"
-                value={presetDraft.name}
-                onChange={(event) =>
-                  setPresetDraft({ ...presetDraft, name: event.target.value })
-                }
-              />
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  type="number"
-                  value={presetDraft.w}
-                  onChange={(event) =>
-                    setPresetDraft({
-                      ...presetDraft,
-                      w: Number(event.target.value),
-                    })
-                  }
-                />
-                <Input
-                  type="number"
-                  value={presetDraft.h}
-                  onChange={(event) =>
-                    setPresetDraft({
-                      ...presetDraft,
-                      h: Number(event.target.value),
-                    })
-                  }
-                />
-              </div>
-              <Button icon={Check} onClick={savePreset} className="w-full">
-                Save Preset
-              </Button>
-            </div>
-          )}
-
-          <div className="mt-5 grid max-h-[18em] gap-5 overflow-y-auto pr-1 custom-scrollbar">
-            <div className="grid grid-cols-2 gap-3">
-              {customPresets.map((preset) => (
-                <button
-                  key={preset.id}
-                  onClick={() => selectPreset(preset)}
-                  className={`rounded-2xl border p-3 text-left transition ${
-                    slideWidth === preset.w && slideHeight === preset.h
-                      ? "border-zinc-950 bg-zinc-950 text-white dark:border-white dark:bg-white dark:text-zinc-950 shadow-md"
-                      : "border-zinc-200 bg-white hover:border-zinc-950 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-white"
-                  }`}
-                >
-                  <span className="block truncate text-[11px] font-black uppercase tracking-widest">
-                    {preset.name}
-                  </span>
-                  <span
-                    className={`mt-1 block font-mono text-xs font-medium ${
-                      slideWidth === preset.w && slideHeight === preset.h
-                        ? "opacity-70"
-                        : "text-zinc-500"
-                    }`}
-                  >
-                    {preset.w}x{preset.h}
-                  </span>
-                </button>
-              ))}
-            </div>
-
-            {STATIC_PRESETS.map((group) => {
-              const Icon = group.icon.type;
-              return (
-                <div key={group.category} className="grid gap-3">
-                  <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
-                    <Icon size={14} {...iconProps} /> {group.category}
+          <div className="p-5">
+            <div className={activeTab === "presets" ? "block" : "hidden"}>
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+                    Dimension Presets
                   </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {group.items.map((preset) => (
-                      <button
-                        key={`${group.category}-${preset.name}`}
-                        onClick={() => selectPreset(preset)}
-                        className={`rounded-2xl border p-3 text-left transition ${
-                          slideWidth === preset.w && slideHeight === preset.h
-                            ? "border-zinc-950 bg-zinc-950 text-white dark:border-white dark:bg-white dark:text-zinc-950 shadow-md"
-                            : "border-zinc-200 bg-white hover:border-zinc-950 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-white"
-                        }`}
-                      >
-                        <span className="block truncate text-[11px] font-black uppercase tracking-widest">
-                          {preset.name}
-                        </span>
-                        <span
-                          className={`mt-1 block font-mono text-xs font-medium ${
-                            slideWidth === preset.w && slideHeight === preset.h
-                              ? "opacity-70"
-                              : "text-zinc-500"
-                          }`}
-                        >
-                          {preset.w}x{preset.h}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
+                  <p className="mt-1 font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+                    {slideWidth}x{slideHeight}px
+                  </p>
                 </div>
-              );
-            })}
-          </div>
-        </Card>
+                <Button
+                  size="sm"
+                  icon={Plus}
+                  variant="secondary"
+                  onClick={() => {
+                    setPresetDraft({ name: "", w: slideWidth, h: slideHeight });
+                    setShowPresetForm((value) => !value);
+                  }}
+                >
+                  Add
+                </Button>
+              </div>
 
-        <Card className="order-1 p-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
-                Slide Slicer
-              </p>
-              <h2 className="mt-1 text-2xl font-black tracking-tight text-zinc-900 dark:text-white">
-                Batch Slice Assets
-              </h2>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={resetSlicer}
-              aria-label="Reset slicer"
-            >
-              <RotateCcw size={18} />
-            </Button>
-          </div>
+              {showPresetForm && (
+                <div className="mt-4 grid gap-3 rounded-2xl border border-zinc-200 p-4 bg-white dark:border-zinc-800 dark:bg-zinc-900/50">
+                  <Input
+                    placeholder="Preset name"
+                    value={presetDraft.name}
+                    onChange={(event) =>
+                      setPresetDraft({ ...presetDraft, name: event.target.value })
+                    }
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input
+                      type="number"
+                      value={presetDraft.w}
+                      onChange={(event) =>
+                        setPresetDraft({
+                          ...presetDraft,
+                          w: Number(event.target.value),
+                        })
+                      }
+                    />
+                    <Input
+                      type="number"
+                      value={presetDraft.h}
+                      onChange={(event) =>
+                        setPresetDraft({
+                          ...presetDraft,
+                          h: Number(event.target.value),
+                        })
+                      }
+                    />
+                  </div>
+                  <Button icon={Check} onClick={savePreset} className="w-full">
+                    Save Preset
+                  </Button>
+                </div>
+              )}
 
-          <div className="mt-6 grid gap-5">
-            <Card className="p-4 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
-              <RangeSlider
-                label="Canvas Zoom"
-                valueLabel={`${Math.round(zoom * 100)}%`}
-                min="1"
-                max="3"
-                step="0.1"
-                value={zoom}
-                onChange={(event) => setZoom(Number(event.target.value))}
-              />
-            </Card>
-
-            <Input
-              label="Export Prefix"
-              value={prefix}
-              onChange={(event) => setPrefix(event.target.value)}
-            />
-
-            <div className="grid grid-cols-2 gap-3">
-              <Input
-                label="Width"
-                type="number"
-                value={slideWidth}
-                onChange={(event) => setSlideWidth(Number(event.target.value))}
-              />
-              <Input
-                label="Height"
-                type="number"
-                value={slideHeight}
-                onChange={(event) => setSlideHeight(Number(event.target.value))}
-              />
-            </div>
-
-            <div className="grid grid-cols-[minmax(0,1fr)_8em] gap-3">
-              <Input
-                label="Slices"
-                type="number"
-                min="1"
-                value={slideCount}
-                onChange={(event) =>
-                  setSlideCount(Math.max(1, Number(event.target.value)))
-                }
-              />
-              <div className="grid content-end">
-                <div className="grid grid-cols-2 gap-1 rounded-2xl border border-zinc-200 p-1 dark:border-zinc-800 bg-white dark:bg-zinc-950">
-                  {[
-                    ["horizontal", "H"],
-                    ["vertical", "V"],
-                  ].map(([value, label]) => (
+              <div className="mt-5 grid max-h-[18em] gap-5 overflow-y-auto pr-1 custom-scrollbar">
+                <div className="grid grid-cols-2 gap-3">
+                  {customPresets.map((preset) => (
                     <button
-                      key={value}
-                      onClick={() => setDirection(value)}
-                      className={`rounded-xl py-2.5 text-xs font-black transition-all duration-200 ease-out ${
-                        direction === value
-                          ? "bg-zinc-950 text-white shadow-sm dark:bg-white dark:text-zinc-950"
-                          : "text-zinc-500 hover:bg-white/60 dark:hover:bg-zinc-800 dark:text-zinc-400"
+                      key={preset.id}
+                      onClick={() => selectPreset(preset)}
+                      className={`rounded-2xl border p-3 text-left transition ${
+                        slideWidth === preset.w && slideHeight === preset.h
+                          ? "border-zinc-950 bg-zinc-950 text-white dark:border-white dark:bg-white dark:text-zinc-950 shadow-md"
+                          : "border-zinc-200 bg-white hover:border-zinc-950 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-white"
                       }`}
                     >
-                      {label}
+                      <span className="block truncate text-[11px] font-black uppercase tracking-widest">
+                        {preset.name}
+                      </span>
+                      <span
+                        className={`mt-1 block font-mono text-xs font-medium ${
+                          slideWidth === preset.w && slideHeight === preset.h
+                            ? "opacity-70"
+                            : "text-zinc-500"
+                        }`}
+                      >
+                        {preset.w}x{preset.h}
+                      </span>
                     </button>
                   ))}
                 </div>
+
+                {STATIC_PRESETS.map((group) => {
+                  const Icon = group.icon.type;
+                  return (
+                    <div key={group.category} className="grid gap-3">
+                      <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+                        <Icon size={14} {...iconProps} /> {group.category}
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {group.items.map((preset) => (
+                          <button
+                            key={`${group.category}-${preset.name}`}
+                            onClick={() => selectPreset(preset)}
+                            className={`rounded-2xl border p-3 text-left transition ${
+                              slideWidth === preset.w && slideHeight === preset.h
+                                ? "border-zinc-950 bg-zinc-950 text-white dark:border-white dark:bg-white dark:text-zinc-950 shadow-md"
+                                : "border-zinc-200 bg-white hover:border-zinc-950 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-white"
+                            }`}
+                          >
+                            <span className="block truncate text-[11px] font-black uppercase tracking-widest">
+                              {preset.name}
+                            </span>
+                            <span
+                              className={`mt-1 block font-mono text-xs font-medium ${
+                                slideWidth === preset.w && slideHeight === preset.h
+                                  ? "opacity-70"
+                                  : "text-zinc-500"
+                              }`}
+                            >
+                              {preset.w}x{preset.h}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={importImage}
-            />
-            <div className="grid gap-2 pt-2">
-              <Button
-                icon={Upload}
-                variant="secondary"
-                size="lg"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                Import Source
-              </Button>
-              <Button
-                icon={Grid3X3}
-                variant="primary"
-                size="lg"
-                disabled={!sourceImage}
-                onClick={generateSlices}
-              >
-                Slice Image
-              </Button>
+            <div className={activeTab === "slicer" ? "block" : "hidden"}>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+                    Slide Slicer
+                  </p>
+                  <h2 className="mt-1 text-2xl font-black tracking-tight text-zinc-900 dark:text-white">
+                    Batch Slice Assets
+                  </h2>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={resetSlicer}
+                  aria-label="Reset slicer"
+                >
+                  <RotateCcw size={18} />
+                </Button>
+              </div>
+
+              <div className="mt-6 grid gap-5">
+                <Card className="p-4 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
+                  <RangeSlider
+                    label="Canvas Zoom"
+                    valueLabel={`${Math.round(zoom * 100)}%`}
+                    min="1"
+                    max="3"
+                    step="0.1"
+                    value={zoom}
+                    onChange={(event) => setZoom(Number(event.target.value))}
+                  />
+                </Card>
+
+                <Input
+                  label="Export Prefix"
+                  value={prefix}
+                  onChange={(event) => setPrefix(event.target.value)}
+                />
+
+                <div className="grid grid-cols-2 gap-3">
+                  <Input
+                    label="Width"
+                    type="number"
+                    value={slideWidth}
+                    onChange={(event) => setSlideWidth(Number(event.target.value))}
+                  />
+                  <Input
+                    label="Height"
+                    type="number"
+                    value={slideHeight}
+                    onChange={(event) => setSlideHeight(Number(event.target.value))}
+                  />
+                </div>
+
+                <div className="grid grid-cols-[minmax(0,1fr)_8em] gap-3">
+                  <Input
+                    label="Slices"
+                    type="number"
+                    min="1"
+                    value={slideCount}
+                    onChange={(event) =>
+                      setSlideCount(Math.max(1, Number(event.target.value)))
+                    }
+                  />
+                  <div className="grid content-end">
+                    <div className="grid grid-cols-2 gap-1 rounded-2xl border border-zinc-200 p-1 dark:border-zinc-800 bg-white dark:bg-zinc-950">
+                      {[
+                        ["horizontal", "H"],
+                        ["vertical", "V"],
+                      ].map(([value, label]) => (
+                        <button
+                          key={value}
+                          onClick={() => setDirection(value)}
+                          className={`rounded-xl py-2.5 text-xs font-black transition-all duration-200 ease-out ${
+                            direction === value
+                              ? "bg-zinc-950 text-white shadow-sm dark:bg-white dark:text-zinc-950"
+                              : "text-zinc-500 hover:bg-white/60 dark:hover:bg-zinc-800 dark:text-zinc-400"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={importImage}
+                />
+                <div className="grid gap-2 pt-2">
+                  <Button
+                    icon={Upload}
+                    variant="secondary"
+                    size="lg"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    Import Source
+                  </Button>
+                  <Button
+                    icon={Grid3X3}
+                    variant="primary"
+                    size="lg"
+                    disabled={!sourceImage}
+                    onClick={generateSlices}
+                  >
+                    Slice Image
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         </Card>
