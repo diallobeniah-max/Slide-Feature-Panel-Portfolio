@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Download, FileImage, Hand, Layers, RotateCcw } from "lucide-react";
+import { Download, FileImage, Layers, RotateCcw } from "lucide-react";
 import { downloadBlob } from "../utils/media.js";
 import { Button, Card, Input, RangeSlider } from "./ui.jsx";
 import {
@@ -27,12 +27,12 @@ export default function GridBuilder() {
   const [showBg, setShowBg] = useState(true);
   const [exportMode, setExportMode] = useState("png");
   const [previewZoom, setPreviewZoom] = useState(100);
-  const [panMode, setPanMode] = useState(false);
-  const [isPanning, setIsPanning] = useState(false);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
 
   const previewRef = useRef(null);
   const previewViewportRef = useRef(null);
-  const panStateRef = useRef(null);
+  const dragStart = useRef({ x: 0, y: 0 });
 
   /* ── Custom presets (shared with Slide Slicer) ────────────────── */
   const [customPresets] = useState(() => {
@@ -183,40 +183,28 @@ export default function GridBuilder() {
 
   function resetPreviewView() {
     setPreviewZoom(100);
-    const viewport = previewViewportRef.current;
-    if (!viewport) return;
-    viewport.scrollLeft = 0;
-    viewport.scrollTop = 0;
+    setPan({ x: 0, y: 0 });
   }
 
   function handlePanStart(event) {
-    if (!panMode || (typeof event.button === "number" && event.button !== 0)) return;
-    const viewport = previewViewportRef.current;
-    if (!viewport) return;
+    // Only enable panning when zoomed in (zoom > 100%)
+    if (previewZoom <= 100) return;
     event.preventDefault();
-    viewport.setPointerCapture?.(event.pointerId);
-    setIsPanning(true);
-    panStateRef.current = {
-      x: event.clientX,
-      y: event.clientY,
-      left: viewport.scrollLeft,
-      top: viewport.scrollTop,
-    };
+    setIsDragging(true);
+    dragStart.current = { x: event.clientX - pan.x, y: event.clientY - pan.y };
   }
 
   function handlePanMove(event) {
-    if (!isPanning || !panStateRef.current) return;
-    const viewport = previewViewportRef.current;
-    if (!viewport) return;
+    if (!isDragging) return;
     event.preventDefault();
-    viewport.scrollLeft = panStateRef.current.left - (event.clientX - panStateRef.current.x);
-    viewport.scrollTop = panStateRef.current.top - (event.clientY - panStateRef.current.y);
+    setPan({
+      x: event.clientX - dragStart.current.x,
+      y: event.clientY - dragStart.current.y,
+    });
   }
 
   function handlePanEnd(event) {
-    previewViewportRef.current?.releasePointerCapture?.(event.pointerId);
-    setIsPanning(false);
-    panStateRef.current = null;
+    setIsDragging(false);
   }
 
   /* ── Export ───────────────────────────────────────────────────── */
@@ -281,27 +269,29 @@ export default function GridBuilder() {
       {/* ── Sidebar ───────────────────────────────────────────────── */}
       <aside className="grid content-start gap-5 panel-enter-aside">
         <Card className="p-0 overflow-hidden flex flex-col">
-          <div className="flex bg-zinc-100/50 dark:bg-zinc-900/50 border-b border-zinc-200 dark:border-zinc-800 p-1.5 gap-1.5">
-            <button
-              onClick={() => setActiveTab("builder")}
-              className={`flex-1 text-xs py-2 rounded-lg font-bold uppercase tracking-widest transition-all ${
-                activeTab === "builder"
-                  ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-              }`}
-            >
-              Grid Builder
-            </button>
-            <button
-              onClick={() => setActiveTab("presets")}
-              className={`flex-1 text-xs py-2 rounded-lg font-bold uppercase tracking-widest transition-all ${
-                activeTab === "presets"
-                  ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-              }`}
-            >
-              Presets
-            </button>
+          <div className="p-2 border-b border-zinc-200 dark:border-zinc-800/50 bg-zinc-50 dark:bg-zinc-950/20">
+            <div className="flex bg-zinc-100 dark:bg-zinc-800/50 p-1 rounded-[14px] gap-1">
+              <button
+                onClick={() => setActiveTab("builder")}
+                className={`flex-1 text-[10px] py-2.5 rounded-[10px] font-black uppercase tracking-[0.12em] transition-all duration-300 ${
+                  activeTab === "builder"
+                    ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50 shadow-[0_4px_12px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.3)] scale-[1.02]"
+                    : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                }`}
+              >
+                Grid Builder
+              </button>
+              <button
+                onClick={() => setActiveTab("presets")}
+                className={`flex-1 text-[10px] py-2.5 rounded-[10px] font-black uppercase tracking-[0.12em] transition-all duration-300 ${
+                  activeTab === "presets"
+                    ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50 shadow-[0_4px_12px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.3)] scale-[1.02]"
+                    : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                }`}
+              >
+                Presets
+              </button>
+            </div>
           </div>
 
           <div className="p-5">
@@ -436,24 +426,15 @@ export default function GridBuilder() {
                   value={previewZoom}
                   onChange={(e) => setPreviewZoom(Number(e.target.value))}
                 />
-                <div className="grid grid-cols-2 gap-2">
-                  <Button
-                    variant={panMode ? "primary" : "secondary"}
-                    size="sm"
-                    icon={Hand}
-                    onClick={() => setPanMode((value) => !value)}
-                  >
-                    Hand Tool
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    icon={RotateCcw}
-                    onClick={resetPreviewView}
-                  >
-                    Reset View
-                  </Button>
-                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  icon={RotateCcw}
+                  onClick={resetPreviewView}
+                  className="w-full"
+                >
+                  Reset View
+                </Button>
               </div>
 
               {/* Colors */}
@@ -553,25 +534,30 @@ export default function GridBuilder() {
           </div>
           <div
             ref={previewViewportRef}
-            onPointerDown={handlePanStart}
-            onPointerMove={handlePanMove}
-            onPointerUp={handlePanEnd}
-            onPointerCancel={handlePanEnd}
-            onPointerLeave={handlePanEnd}
-            style={{ touchAction: panMode ? "none" : "auto" }}
+            onMouseDown={handlePanStart}
+            onMouseMove={handlePanMove}
+            onMouseUp={handlePanEnd}
+            onMouseLeave={handlePanEnd}
             className={`h-[28rem] overflow-auto bg-white/60 dark:bg-zinc-950/60 ${
-              panMode
-                ? isPanning
+              previewZoom > 100
+                ? isDragging
                   ? "cursor-grabbing select-none"
                   : "cursor-grab"
                 : ""
             }`}
           >
             <div className="flex min-h-full min-w-full items-center justify-center p-6">
-              <canvas
-                ref={previewRef}
-                className="shrink-0 rounded-xl border border-zinc-200 shadow-xl dark:border-zinc-800"
-              />
+              <div
+                className="relative transition-transform duration-75"
+                style={{
+                  transform: `scale(${previewZoom / 100}) translate(${pan.x / (previewZoom / 100)}px, ${pan.y / (previewZoom / 100)}px)`,
+                }}
+              >
+                <canvas
+                  ref={previewRef}
+                  className="shrink-0 rounded-xl border border-zinc-200 shadow-xl dark:border-zinc-800"
+                />
+              </div>
             </div>
           </div>
           <div className="px-5 py-3 bg-white dark:bg-zinc-900/50 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
@@ -579,7 +565,7 @@ export default function GridBuilder() {
               {slideCount} slides horizontal · {slideCount - 1} vertical lines · {lineWeight}px @ {lineOpacity}%
             </p>
             <p className="text-[10px] font-mono text-zinc-400 uppercase tracking-widest">
-              {previewZoom}% zoom - {panMode ? "hand on" : "scroll on"} - {showBg ? bgColor : "transparent bg"}
+              {previewZoom}% zoom - {showBg ? bgColor : "transparent bg"}
             </p>
           </div>
         </Card>

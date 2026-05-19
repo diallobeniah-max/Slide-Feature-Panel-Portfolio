@@ -77,6 +77,23 @@ export default function YouTubePanel() {
         qualities: data.qualities, audioSize: data.audioSize,
         subtitleLangs: data.subtitleLangs, viewCount: data.viewCount
       } : q));
+
+      // Add to history immediately upon successful fetch
+      setHistory(prev => {
+        const filtered = prev.filter(h => h.url !== url);
+        const histItem = {
+          id: crypto.randomUUID(), 
+          title: data.title, 
+          date: new Date().toISOString(),
+          url: url, 
+          thumbnail: data.thumbnail,
+          length: data.duration,
+          isYouTube: true
+        };
+        const newHist = [histItem, ...filtered].slice(0, 50);
+        saveHistory(newHist);
+        return newHist;
+      });
     } catch (err) {
       setQueue(prev => prev.map(q => q.id === id ? {
         ...q, status: "error", error: err.message,
@@ -186,15 +203,22 @@ export default function YouTubePanel() {
 
     setQueue(prev => prev.map(q => q.id === id ? { ...q, status: "done" } : q));
 
-    // Save to history
-    const histItem = {
-      id: crypto.randomUUID(), title: item.title, date: new Date().toISOString(),
-      quality: item.quality, format: ext, length: (item.trimEnd || item.duration) - item.trimStart,
-      url: item.url, thumbnail: item.thumbnail
-    };
-    const newHist = [histItem, ...history];
-    setHistory(newHist);
-    saveHistory(newHist);
+    // Update history with quality and format after successful download
+    setHistory(prev => {
+      const updated = prev.map(h => {
+        if (h.url === item.url) {
+          return {
+            ...h,
+            quality: item.quality,
+            format: item.format,
+            date: new Date().toISOString()
+          };
+        }
+        return h;
+      });
+      saveHistory(updated);
+      return updated;
+    });
 
     window.dispatchEvent(new CustomEvent("studio-notify", {
       detail: { title: "Download Complete", message: safeName, type: "success" }

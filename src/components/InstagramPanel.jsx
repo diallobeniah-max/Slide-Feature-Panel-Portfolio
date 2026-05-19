@@ -10,12 +10,14 @@ import {
   FileArchive,
   FileText,
   Film,
+  FolderOpen,
   Image as ImageIcon,
   Layers,
   Link,
   Loader2,
   Maximize2,
   Minimize2,
+  Package,
   RefreshCw,
   Trash2,
   X,
@@ -33,7 +35,7 @@ const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'\".,!?;:-()/#& ";
 
 function normalizeInstagramUrl(value) {
-  const trimmed = String(value || "").trim();
+  const trimmed = value.trim();
   if (!trimmed) return "";
 
   try {
@@ -50,6 +52,16 @@ function normalizeInstagramUrl(value) {
     if (!shortcode) return "";
 
     return `https://www.instagram.com/${type}/${shortcode}/`;
+  } catch {
+    return "";
+  }
+}
+
+function extractShortcode(url) {
+  try {
+    const u = new URL(url);
+    const parts = u.pathname.split("/").filter(Boolean);
+    return parts[1] || "";
   } catch {
     return "";
   }
@@ -506,56 +518,371 @@ async function imageToOcrSources(url) {
   return sources;
 }
 
+/* ─── helpers for image format conversion ─────────────────────── */
+async function fetchBlob(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Failed to fetch ${url}`);
+  return res.blob();
+}
+
+async function convertImageBlob(blob, format) {
+  const mimeType = format === "jpeg" ? "image/jpeg" : "image/png";
+  const img = await createImageBitmap(blob);
+  const canvas = document.createElement("canvas");
+  canvas.width = img.width;
+  canvas.height = img.height;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0);
+  return new Promise((resolve) =>
+    canvas.toBlob(resolve, mimeType, format === "jpeg" ? 0.92 : undefined),
+  );
+}
+
+function extensionForFormat(originalName, format) {
+  const base = originalName.replace(/\.[^.]+$/, "");
+  if (format === "jpeg") return `${base}.jpg`;
+  if (format === "png") return `${base}.png`;
+  return originalName;
+}
+
+/* ─── Download All Modal Component ────────────────────────────── */
+function DownloadAllModal({
+  open,
+  onClose,
+  posts,
+  viewerPostId,
+  viewerItemIndex,
+  onDownload,
+}) {
+  const [step, setStep] = useState("format");
+  const [format, setFormat] = useState("png");
+  const [scope, setScope] = useState("all");
+  const [organize, setOrganize] = useState("separate");
+
+  useEffect(() => {
+    if (open) {
+      setStep("format");
+      setFormat("png");
+      setScope("all");
+      setOrganize("separate");
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const activePost = posts.find((p) => p.id === viewerPostId);
+  const activeItem = activePost?.items?.[viewerItemIndex] || null;
+
+  const totalItems = posts.reduce((sum, p) => sum + p.items.length, 0);
+
+  const formatOptions = [
+    { id: "png", label: "PNG", desc: "Lossless images", supported: true },
+    { id: "jpeg", label: "JPEG", desc: "Compressed images", supported: true },
+    { id: "psd", label: "PSD", desc: "Photoshop format", supported: false },
+  ];
+
+  const scopeOptions = [
+    ...(activeItem
+      ? [
+          {
+            id: "item",
+            label: "Selected Item Only",
+            desc: `One file: ${activeItem.name}`,
+          },
+        ]
+      : []),
+    ...(activePost
+      ? [
+          {
+            id: "post",
+            label: "Selected Carousel Only",
+            desc: `${activePost.items.length} item${activePost.items.length === 1 ? "" : "s"} from @${activePost.meta?.ownerUsername || activePost.meta?.shortcode || "post"}`,
+          },
+        ]
+      : []),
+    ...(activePost
+      ? [
+          {
+            id: "post_all",
+            label: "All Carousel Items",
+            desc: `${activePost.items.length} item${activePost.items.length === 1 ? "" : "s"} from current post`,
+          },
+        ]
+      : []),
+    {
+      id: "all",
+      label: "Everything from All Links",
+      desc: `${totalItems} item${totalItems === 1 ? "" : "s"} across ${posts.length} post${posts.length === 1 ? "" : "s"}`,
+    },
+  ];
+
+  const organizeOptions = [
+    {
+      id: "separate",
+      label: "Download Separately",
+      desc: "Each link gets its own subfolder",
+      example: "Instagram_Downloads/carousel_01_username/01.png",
+    },
+    {
+      id: "together",
+      label: "Download Together",
+      desc: "All files in one folder",
+      example: "Instagram_Downloads/link01_carousel01_01.png",
+    },
+  ];
+
+  function handleFormatSelect(f) {
+    if (!f.supported) return;
+    setFormat(f.id);
+    setStep("scope");
+  }
+
+  function handleScopeSelect(s) {
+    setScope(s.id);
+    setStep("organize");
+  }
+
+  function handleOrganizeSelect(o) {
+    setOrganize(o.id);
+    setStep("confirm");
+  }
+
+  function handleConfirm() {
+    onDownload({ format, scope, organize });
+    onClose();
+  }
+
+  const stepTitle =
+    step === "format"
+      ? "Choose Format"
+      : step === "scope"
+        ? "Choose What to Download"
+        : step === "organize"
+          ? "Folder Organization"
+          : "Confirm Download";
+
+  return createPortal(
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-8">
+      <div
+        className="absolute inset-0 bg-zinc-950/80 backdrop-blur-xl"
+        onClick={onClose}
+      />
+      <Card className="relative w-full max-w-md rounded-[28px] border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+        <div className="mb-5 flex items-center justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+              Download All
+            </p>
+            <h3 className="mt-1 text-lg font-black tracking-tight text-zinc-900 dark:text-zinc-50">
+              {stepTitle}
+            </h3>
+          </div>
+          <Button
+            icon={X}
+            size="icon"
+            variant="secondary"
+            onClick={onClose}
+            aria-label="Close"
+          />
+        </div>
+
+        {step === "format" && (
+          <div className="grid gap-2">
+            {formatOptions.map((f) => (
+              <button
+                key={f.id}
+                onClick={() => handleFormatSelect(f)}
+                disabled={!f.supported}
+                className={`flex items-center gap-3 rounded-2xl border p-4 text-left transition-all ${
+                  f.supported
+                    ? "border-zinc-200 hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-800/50"
+                    : "cursor-not-allowed border-zinc-100 opacity-50 dark:border-zinc-800/50"
+                }`}
+              >
+                <div
+                  className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${
+                    f.supported
+                      ? "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                      : "bg-zinc-50 text-zinc-400 dark:bg-zinc-900 dark:text-zinc-600"
+                  }`}
+                >
+                  {f.id === "png" && <ImageIcon size={18} />}
+                  {f.id === "jpeg" && <ImageIcon size={18} />}
+                  {f.id === "psd" && <FileText size={18} />}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-zinc-900 dark:text-zinc-100">
+                    {f.label}
+                  </p>
+                  <p className="text-[11px] font-medium text-zinc-500">
+                    {f.supported ? f.desc : "PSD export is not available yet"}
+                  </p>
+                </div>
+                {f.supported && (
+                  <ChevronRight
+                    size={16}
+                    className="ml-auto shrink-0 text-zinc-400"
+                  />
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {step === "scope" && (
+          <div className="grid gap-2">
+            {scopeOptions.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => handleScopeSelect(s)}
+                className="flex items-center gap-3 rounded-2xl border border-zinc-200 p-4 text-left transition-all hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-800/50"
+              >
+                <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                  {s.id === "item" && <ImageIcon size={18} />}
+                  {s.id === "post" && <Layers size={18} />}
+                  {s.id === "post_all" && <Package size={18} />}
+                  {s.id === "all" && <FolderOpen size={18} />}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-black text-zinc-900 dark:text-zinc-100">
+                    {s.label}
+                  </p>
+                  <p className="text-[11px] font-medium text-zinc-500">
+                    {s.desc}
+                  </p>
+                </div>
+                <ChevronRight
+                  size={16}
+                  className="ml-auto shrink-0 text-zinc-400"
+                />
+              </button>
+            ))}
+            <button
+              onClick={() => setStep("format")}
+              className="mt-1 text-[11px] font-black uppercase tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300"
+            >
+              Back to Format
+            </button>
+          </div>
+        )}
+
+        {step === "organize" && (
+          <div className="grid gap-2">
+            {organizeOptions.map((o) => (
+              <button
+                key={o.id}
+                onClick={() => handleOrganizeSelect(o)}
+                className="flex flex-col gap-1 rounded-2xl border border-zinc-200 p-4 text-left transition-all hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-600 dark:hover:bg-zinc-800/50"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                    {o.id === "separate" ? <FolderOpen size={18} /> : <Package size={18} />}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-black text-zinc-900 dark:text-zinc-100">
+                      {o.label}
+                    </p>
+                    <p className="text-[11px] font-medium text-zinc-500">
+                      {o.desc}
+                    </p>
+                  </div>
+                  <ChevronRight
+                    size={16}
+                    className="ml-auto shrink-0 text-zinc-400"
+                  />
+                </div>
+                <p className="mt-1 rounded-lg bg-zinc-50 px-2 py-1 font-mono text-[9px] text-zinc-500 dark:bg-zinc-950/50">
+                  {o.example}
+                </p>
+              </button>
+            ))}
+            <button
+              onClick={() => setStep("scope")}
+              className="mt-1 text-[11px] font-black uppercase tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300"
+            >
+              Back to Scope
+            </button>
+          </div>
+        )}
+
+        {step === "confirm" && (
+          <div className="grid gap-4">
+            <div className="rounded-2xl border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/50">
+              <div className="mb-3 grid grid-cols-2 gap-2 text-[11px]">
+                <div>
+                  <p className="font-black uppercase tracking-widest text-zinc-400">
+                    Format
+                  </p>
+                  <p className="mt-0.5 font-black text-zinc-900 dark:text-zinc-100">
+                    {format.toUpperCase()}
+                  </p>
+                </div>
+                <div>
+                  <p className="font-black uppercase tracking-widest text-zinc-400">
+                    Organization
+                  </p>
+                  <p className="mt-0.5 font-black text-zinc-900 dark:text-zinc-100">
+                    {organize === "separate" ? "Separate Folders" : "Together"}
+                  </p>
+                </div>
+              </div>
+              <div>
+                <p className="font-black uppercase tracking-widest text-zinc-400">
+                  Scope
+                </p>
+                <p className="mt-0.5 font-black text-zinc-900 dark:text-zinc-100">
+                  {scopeOptions.find((s) => s.id === scope)?.label}
+                </p>
+              </div>
+            </div>
+            <Button
+              icon={Download}
+              onClick={handleConfirm}
+              className="w-full"
+            >
+              Start Download
+            </Button>
+            <button
+              onClick={() => setStep("organize")}
+              className="text-center text-[11px] font-black uppercase tracking-widest text-zinc-500 hover:text-zinc-900 dark:hover:text-zinc-300"
+            >
+              Back
+            </button>
+          </div>
+        )}
+      </Card>
+    </div>,
+    document.body,
+  );
+}
+
+/* ─── Main Component ──────────────────────────────────────────── */
 export default function InstagramPanel({ initialUrl = "" }) {
   const [postUrl, setPostUrl] = useState(initialUrl);
-  const [posts, setPosts] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [phase, setPhase] = useState("idle");
-  const [phaseMsg, setPhaseMsg] = useState("");
-  const [activePostId, setActivePostId] = useState(null);
-  const [activeViewerIndex, setActiveViewerIndex] = useState(null);
+  const [posts, setPosts] = useState([]);
+  const [globalPhase, setGlobalPhase] = useState("idle");
+  const [globalPhaseMsg, setGlobalPhaseMsg] = useState("");
+
+  const [viewerPostId, setViewerPostId] = useState(null);
+  const [viewerItemIndex, setViewerItemIndex] = useState(null);
+  const [isViewerFullscreen, setIsViewerFullscreen] = useState(false);
+
   const [ocrById, setOcrById] = useState({});
   const [ocrLoadingId, setOcrLoadingId] = useState(null);
   const [ocrProgress, setOcrProgress] = useState(0);
-  const [isViewerFullscreen, setIsViewerFullscreen] = useState(false);
+
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkText, setBulkText] = useState("");
-  const [downloadMenuOpen, setDownloadMenuOpen] = useState(false);
-  const [downloadOptions, setDownloadOptions] = useState({ format: 'PNG', scope: 'everything', organize: 'separate' });
-  const [igHistory, setIgHistory] = useState(() => {
-    try {
-      const saved = localStorage.getItem("ig-history");
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
-  const [expandedHistoryId, setExpandedHistoryId] = useState(null);
+
+  const [downloadModalOpen, setDownloadModalOpen] = useState(false);
+
   const inputRef = useRef(null);
   const loadedUrlRef = useRef("");
   const abortRef = useRef(null);
   const sidebarCardRef = useRef(null);
   const ocrTextRef = useRef(null);
   const [mediaHeight, setMediaHeight] = useState(null);
-
-  useEffect(() => {
-    localStorage.setItem("ig-history", JSON.stringify(igHistory));
-  }, [igHistory]);
-
-  const addToHistory = (post) => {
-    setIgHistory(prev => {
-      const filtered = prev.filter(h => h.url !== post.url);
-      const entry = {
-        id: post.id,
-        url: post.url,
-        username: post.meta?.ownerUsername || post.meta?.shortcode || "unknown",
-        mediaCount: post.items.length,
-        thumbnail: post.items[0]?.previewUrl || "",
-        date: Date.now()
-      };
-      return [entry, ...filtered].slice(0, 50);
-    });
-  };
 
   useEffect(() => {
     const node = sidebarCardRef.current;
@@ -577,27 +904,28 @@ export default function InstagramPanel({ initialUrl = "" }) {
     };
   }, []);
 
-  async function loadPost(urlValue) {
+  async function loadPost(urlValue = postUrl) {
     const normalized = normalizeInstagramUrl(urlValue);
     if (!normalized) {
-      setPhase("failed");
-      setPhaseMsg("Paste a valid Instagram link.");
+      setGlobalPhase("failed");
+      setGlobalPhaseMsg("Paste a valid Instagram post, reel, or carousel link.");
       return;
     }
 
-    if (posts.some(p => p.url === normalized)) {
-      setPhase("failed");
-      setPhaseMsg("This link is already added.");
-      return;
-    }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
+    loadedUrlRef.current = normalized;
+    setPostUrl(normalized);
     setLoading(true);
-    setPhase("loading");
-    setPhaseMsg("Loading media...");
+    setGlobalPhase("loading");
+    setGlobalPhaseMsg("Loading carousel media...");
 
     try {
       const response = await fetch(
-        `/api/instagram-carousel?url=${encodeURIComponent(normalized)}`
+        `/api/instagram-carousel?url=${encodeURIComponent(normalized)}`,
+        { signal: controller.signal },
       );
 
       if (!response.ok) {
@@ -607,26 +935,33 @@ export default function InstagramPanel({ initialUrl = "" }) {
       const data = await response.json();
       const mediaItems = Array.isArray(data.items) ? data.items : [];
       if (!mediaItems.length) {
-        throw new Error("No media found.");
+        throw new Error("No downloadable carousel media was found.");
       }
 
+      const postId = crypto.randomUUID();
       const newPost = {
-        id: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2),
+        id: postId,
         url: normalized,
         meta: data.post || null,
         items: mediaItems,
-        expanded: true,
-        selectedIds: mediaItems.map(i => i.id)
+        phase: "done",
+        phaseMsg: `${mediaItems.length} item${mediaItems.length === 1 ? "" : "s"} ready.`,
+        loading: false,
       };
 
-      setPosts(prev => [newPost, ...prev]);
-      addToHistory(newPost);
-      setPhase("done");
-      setPhaseMsg("Post added successfully.");
-      notify("Added", "Instagram post loaded.");
+      setPosts((prev) => [...prev, newPost]);
+      setGlobalPhase("done");
+      setGlobalPhaseMsg(
+        `${mediaItems.length} item${mediaItems.length === 1 ? "" : "s"} ready for download.`,
+      );
+      notify(
+        "Carousel Ready",
+        `${mediaItems.length} Instagram item${mediaItems.length === 1 ? "" : "s"} loaded.`,
+      );
     } catch (error) {
-      setPhase("failed");
-      setPhaseMsg(error.message || "Failed to load.");
+      if (error.name === "AbortError") return;
+      setGlobalPhase("failed");
+      setGlobalPhaseMsg(error.message || "Instagram blocked extraction.");
     } finally {
       setLoading(false);
     }
@@ -634,39 +969,48 @@ export default function InstagramPanel({ initialUrl = "" }) {
 
   async function processMultipleUrls(urls) {
     setLoading(true);
-    setPhase("loading");
-    setPhaseMsg(`Processing ${urls.length} links...`);
-    
+    setGlobalPhase("loading");
+    setGlobalPhaseMsg(`Loading ${urls.length} links...`);
+
     let successCount = 0;
+    let totalItems = 0;
+
     for (const url of urls) {
-      if (posts.some(p => p.url === url)) continue;
-      
       try {
         const response = await fetch(`/api/instagram-carousel?url=${encodeURIComponent(url)}`);
-        if (response.ok) {
-          const data = await response.json();
-          const mediaItems = Array.isArray(data.items) ? data.items : [];
-          if (mediaItems.length) {
-            const newPost = {
-              id: typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2),
-              url,
-              meta: data.post || null,
-              items: mediaItems,
-              expanded: false,
-              selectedIds: mediaItems.map(i => i.id)
-            };
-            setPosts(prev => [newPost, ...prev]);
-            addToHistory(newPost);
-            successCount++;
-          }
+        if (!response.ok) continue;
+        const data = await response.json();
+        const mediaItems = Array.isArray(data.items) ? data.items : [];
+        if (mediaItems.length) {
+          const postId = crypto.randomUUID();
+          const newPost = {
+            id: postId,
+            url,
+            meta: data.post || null,
+            items: mediaItems,
+            phase: "done",
+            phaseMsg: `${mediaItems.length} item${mediaItems.length === 1 ? "" : "s"} ready.`,
+            loading: false,
+          };
+          setPosts((prev) => [...prev, newPost]);
+          totalItems += mediaItems.length;
+          successCount += 1;
         }
       } catch (e) {
         console.error("Failed to load", url, e);
       }
     }
-    
-    setPhase("done");
-    setPhaseMsg(`Successfully added ${successCount} posts.`);
+
+    if (successCount === 0) {
+      setGlobalPhase("failed");
+      setGlobalPhaseMsg("No valid Instagram posts could be loaded.");
+    } else {
+      setGlobalPhase("done");
+      setGlobalPhaseMsg(
+        `${totalItems} item${totalItems === 1 ? "" : "s"} from ${successCount} post${successCount === 1 ? "" : "s"} ready.`,
+      );
+      notify("Bulk Load Complete", `${totalItems} items loaded from ${successCount} posts.`);
+    }
     setLoading(false);
   }
 
@@ -677,28 +1021,40 @@ export default function InstagramPanel({ initialUrl = "" }) {
 
   useEffect(() => {
     const normalized = normalizeInstagramUrl(postUrl);
-    if (!normalized || loading) return;
+    if (!normalized || normalized === loadedUrlRef.current || loading) return;
 
-    // No auto-load here to avoid spamming the user while they type
+    const timer = window.setTimeout(() => {
+      loadPost(normalized);
+    }, 450);
+
+    return () => window.clearTimeout(timer);
   }, [postUrl, loading]);
 
-  const activePost = posts.find(p => p.id === activePostId);
+  const activePost = posts.find((p) => p.id === viewerPostId) || null;
   const activeItems = activePost?.items || [];
+  const activeItem =
+    activePost && viewerItemIndex !== null
+      ? activePost.items[viewerItemIndex] || null
+      : null;
+  const activeOcr = activeItem ? ocrById[activeItem.id] : null;
+  const activeOcrText = activeOcr?.text || "";
+  const isReadingActive = activeItem && ocrLoadingId === activeItem.id;
 
   useEffect(() => {
-    if (activeViewerIndex === null) return;
+    if (viewerPostId === null || viewerItemIndex === null) return undefined;
     if (!activeItems.length) {
-      setActiveViewerIndex(null);
+      setViewerPostId(null);
+      setViewerItemIndex(null);
       setIsViewerFullscreen(false);
       return;
     }
-    if (activeViewerIndex > activeItems.length - 1) {
-      setActiveViewerIndex(activeItems.length - 1);
+    if (viewerItemIndex > activeItems.length - 1) {
+      setViewerItemIndex(activeItems.length - 1);
     }
-  }, [activeViewerIndex, activeItems.length]);
+  }, [viewerItemIndex, activeItems.length, viewerPostId]);
 
   useEffect(() => {
-    if (activeViewerIndex === null) return undefined;
+    if (viewerPostId === null) return undefined;
 
     const handleKeyDown = (event) => {
       if (event.key === "Escape") {
@@ -716,16 +1072,16 @@ export default function InstagramPanel({ initialUrl = "" }) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeViewerIndex, activeItems.length]);
+  }, [viewerPostId, viewerItemIndex, activeItems.length]);
 
   useEffect(() => {
-    if (activeViewerIndex === null) return undefined;
+    if (viewerPostId === null) return undefined;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = previousOverflow;
     };
-  }, [activeViewerIndex]);
+  }, [viewerPostId]);
 
   async function pasteAndLoad() {
     try {
@@ -733,8 +1089,8 @@ export default function InstagramPanel({ initialUrl = "" }) {
       const normalized = normalizeInstagramUrl(text);
       if (!normalized) {
         inputRef.current?.focus();
-        setPhase("failed");
-        setPhaseMsg("Clipboard does not contain a valid Instagram link.");
+        setGlobalPhase("failed");
+        setGlobalPhaseMsg("Clipboard does not contain a valid Instagram link.");
         return;
       }
 
@@ -742,8 +1098,8 @@ export default function InstagramPanel({ initialUrl = "" }) {
       await loadPost(normalized);
     } catch {
       inputRef.current?.focus();
-      setPhase("idle");
-      setPhaseMsg("Press Ctrl+V in the link field, and it will load automatically.");
+      setGlobalPhase("idle");
+      setGlobalPhaseMsg("Press Ctrl+V in the link field, and it will load automatically.");
     }
   }
 
@@ -757,18 +1113,22 @@ export default function InstagramPanel({ initialUrl = "" }) {
     window.setTimeout(() => loadPost(normalized), 0);
   }
 
-  function openViewer(index) {
-    setActiveViewerIndex(index);
+  function openViewer(postId, itemIndex) {
+    const post = posts.find((p) => p.id === postId);
+    if (!post || !post.items.length) return;
+    setViewerPostId(postId);
+    setViewerItemIndex(Math.max(0, Math.min(itemIndex, post.items.length - 1)));
     setIsViewerFullscreen(false);
   }
 
   function closeViewer() {
-    setActiveViewerIndex(null);
+    setViewerPostId(null);
+    setViewerItemIndex(null);
     setIsViewerFullscreen(false);
   }
 
   function moveViewer(direction) {
-    setActiveViewerIndex((current) => {
+    setViewerItemIndex((current) => {
       if (current === null || !activeItems.length) return current;
       return (current + direction + activeItems.length) % activeItems.length;
     });
@@ -809,103 +1169,158 @@ export default function InstagramPanel({ initialUrl = "" }) {
     }
   }
 
-  async function downloadOne(item) {
+  async function downloadOne(item, selectedFormat = null) {
     try {
-      const response = await fetch(item.downloadUrl);
-      if (!response.ok) throw new Error();
-      downloadBlob(await response.blob(), item.name);
+      let blob = await fetchBlob(item.downloadUrl);
+      let filename = item.name;
+
+      if (selectedFormat && item.type === "image") {
+        const converted = await convertImageBlob(blob, selectedFormat);
+        if (converted) {
+          blob = converted;
+          filename = extensionForFormat(filename, selectedFormat);
+        }
+      }
+
+      downloadBlob(blob, filename);
     } catch {
-      setPhase("failed");
-      setPhaseMsg(`${item.name} could not be downloaded. Try loading again.`);
+      setGlobalPhase("failed");
+      setGlobalPhaseMsg(`${item.name} could not be downloaded. Try loading again.`);
     }
   }
 
-  async function downloadAll() {
-    const { format, scope, organize } = downloadOptions;
-    if (!posts.length) return;
+  async function downloadPost(postId, selectedFormat = null) {
+    const post = posts.find((p) => p.id === postId);
+    if (!post || !post.items.length) return;
 
-    setPhase("loading");
-    setPhaseMsg("Building download package...");
+    setGlobalPhase("loading");
+    setGlobalPhaseMsg(`Building ZIP for @${post.meta?.ownerUsername || post.meta?.shortcode || "post"}...`);
 
     const zip = new JSZip();
+    const folderName = `carousel_${String(posts.indexOf(post) + 1).padStart(2, "0")}_${post.meta?.ownerUsername || post.meta?.shortcode || "unknown"}`;
+    const folder = zip.folder(folderName);
     const failed = [];
-    
-    // Determine which items to download
-    let downloadQueue = [];
-    if (scope === 'selected-item') {
-      if (activeItem) downloadQueue = [{ item: activeItem, post: activePost }];
-    } else if (scope === 'selected-carousel') {
-      if (activePost) {
-        downloadQueue = activePost.items
-          .filter(i => activePost.selectedIds.includes(i.id))
-          .map(i => ({ item: i, post: activePost }));
-      }
-    } else if (scope === 'all-carousels') {
-      posts.forEach(post => {
-        post.items
-          .filter(i => post.selectedIds.includes(i.id))
-          .forEach(i => downloadQueue.push({ item: i, post }));
-      });
-    } else { // 'everything'
-      posts.forEach(post => {
-        post.items.map(i => downloadQueue.push({ item: i, post }));
-      });
-    }
 
-    if (!downloadQueue.length) {
-      setPhase("failed");
-      setPhaseMsg("No items selected for download.");
-      return;
-    }
-
-
-    const rootFolder = zip.folder("Instagram_Downloads");
-
-    for (const { item, post } of downloadQueue) {
-      const postIndex = posts.findIndex(p => p.id === post.id);
-      const postLabel = `link_${String(postIndex + 1).padStart(2, "0")}`;
-      const username = post.meta?.ownerUsername || "unknown";
-      const shortcode = post.meta?.shortcode || post.id.substring(0, 8);
-      
-      const folderName = `${postLabel}_${username}_${shortcode}`;
-      const extension = item.type === "video" ? "mp4" : format.toLowerCase();
-      const fileName = `${String(item.index + 1).padStart(2, "0")}.${extension}`;
-      
-      const targetZip = organize === 'separate' ? rootFolder.folder(folderName) : rootFolder;
-      const finalName = organize === 'separate' ? fileName : `${folderName}_${fileName}`;
-
+    for (const item of post.items) {
       try {
-        const response = await fetch(item.downloadUrl);
-        if (!response.ok) throw new Error();
-        const blob = await response.blob();
-        targetZip.file(finalName, blob);
+        let blob = await fetchBlob(item.downloadUrl);
+        let filename = item.name;
+        if (selectedFormat && item.type === "image") {
+          const converted = await convertImageBlob(blob, selectedFormat);
+          if (converted) {
+            blob = converted;
+            filename = extensionForFormat(filename, selectedFormat);
+          }
+        }
+        folder.file(filename, blob);
       } catch {
-        failed.push(`${postLabel} - ${item.name}`);
+        failed.push(item);
       }
     }
 
     if (failed.length) {
-      zip.file("failed_downloads.txt", `Failed items:\n${failed.join("\n")}`);
+      folder.file(
+        "failed_downloads.txt",
+        failed.map((item) => `${item.name}: ${item.mediaUrl || item.downloadUrl}`).join("\n"),
+      );
     }
 
     const bundle = await zip.generateAsync({ type: "blob" });
-    downloadBlob(bundle, `instagram_export_${Date.now()}.zip`);
+    downloadBlob(bundle, `${folderName}.zip`);
 
-    setPhase(failed.length ? "partial" : "done");
-    setPhaseMsg(failed.length ? `Exported with ${failed.length} failures.` : "Export complete.");
-    setDownloadMenuOpen(false);
+    setGlobalPhase(failed.length ? "partial" : "done");
+    setGlobalPhaseMsg(failed.length ? `ZIP downloaded with ${failed.length} failed items.` : "ZIP downloaded.");
   }
 
-  function deleteOne(postId, itemId) {
-    setPosts(prev => prev.map(p => {
-      if (p.id !== postId) return p;
-      return {
-        ...p,
-        items: p.items.filter(i => i.id !== itemId),
-        selectedIds: p.selectedIds.filter(id => id !== itemId)
-      };
-    }).filter(p => p.items.length > 0));
-    
+  async function handleDownloadAll({ format, scope, organize }) {
+    setGlobalPhase("loading");
+    setGlobalPhaseMsg("Preparing download...");
+
+    let itemsToDownload = [];
+
+    if (scope === "item") {
+      if (activeItem) itemsToDownload = [{ post: activePost, item: activeItem }];
+    } else if (scope === "post" || scope === "post_all") {
+      if (activePost) {
+        itemsToDownload = activePost.items.map((item) => ({ post: activePost, item }));
+      }
+    } else {
+      itemsToDownload = posts.flatMap((post) =>
+        post.items.map((item) => ({ post, item })),
+      );
+    }
+
+    if (!itemsToDownload.length) {
+      setGlobalPhase("failed");
+      setGlobalPhaseMsg("No items selected for download.");
+      return;
+    }
+
+    const zip = new JSZip();
+    const mainFolder = zip.folder("Instagram_Downloads");
+    const failed = [];
+    let processed = 0;
+
+    for (const { post, item } of itemsToDownload) {
+      try {
+        let blob = await fetchBlob(item.downloadUrl);
+        let filename = item.name;
+
+        if (format && item.type === "image") {
+          const converted = await convertImageBlob(blob, format);
+          if (converted) {
+            blob = converted;
+            filename = extensionForFormat(filename, format);
+          }
+        }
+
+        if (organize === "separate") {
+          const postIndex = posts.findIndex((p) => p.id === post.id) + 1;
+          const subFolderName = `carousel_${String(postIndex).padStart(2, "0")}_${post.meta?.ownerUsername || post.meta?.shortcode || "unknown"}`;
+          const subFolder = mainFolder.folder(subFolderName);
+          subFolder.file(filename, blob);
+        } else {
+          const postIndex = posts.findIndex((p) => p.id === post.id) + 1;
+          const itemIndex = post.items.findIndex((i) => i.id === item.id) + 1;
+          const baseName = filename.replace(/\.[^.]+$/, "");
+          const ext = filename.split(".").pop();
+          filename = `link${String(postIndex).padStart(2, "0")}_carousel${String(itemIndex).padStart(2, "0")}_${baseName}.${ext}`;
+          mainFolder.file(filename, blob);
+        }
+
+        processed += 1;
+        setGlobalPhaseMsg(`Downloaded ${processed} of ${itemsToDownload.length}...`);
+      } catch {
+        failed.push(item);
+      }
+    }
+
+    if (failed.length) {
+      mainFolder.file(
+        "failed_downloads.txt",
+        failed.map((item) => `${item.name}: ${item.mediaUrl || item.downloadUrl}`).join("\n"),
+      );
+    }
+
+    const bundle = await zip.generateAsync({ type: "blob" });
+    downloadBlob(bundle, `Instagram_Downloads_${Date.now()}.zip`);
+
+    setGlobalPhase(failed.length ? "partial" : "done");
+    setGlobalPhaseMsg(
+      failed.length
+        ? `ZIP downloaded. ${failed.length} item${failed.length === 1 ? "" : "s"} failed.`
+        : `ZIP downloaded with ${processed} item${processed === 1 ? "" : "s"}.`,
+    );
+  }
+
+  function deleteItem(postId, itemId) {
+    setPosts((prev) =>
+      prev.map((post) =>
+        post.id === postId
+          ? { ...post, items: post.items.filter((item) => item.id !== itemId) }
+          : post,
+      ),
+    );
     setOcrById((current) => {
       const next = { ...current };
       delete next[itemId];
@@ -914,915 +1329,750 @@ export default function InstagramPanel({ initialUrl = "" }) {
   }
 
   function deletePost(postId) {
-    setPosts(prev => prev.filter(p => p.id !== postId));
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+    const post = posts.find((p) => p.id === postId);
+    if (post) {
+      setOcrById((current) => {
+        const next = { ...current };
+        for (const item of post.items) delete next[item.id];
+        return next;
+      });
+    }
+    if (viewerPostId === postId) {
+      setViewerPostId(null);
+      setViewerItemIndex(null);
+      setIsViewerFullscreen(false);
+    }
   }
-
-  function togglePostExpansion(postId) {
-    setPosts(prev => prev.map(p => p.id === postId ? { ...p, expanded: !p.expanded } : p));
-  }
-
-  function toggleItemSelection(postId, itemId) {
-    setPosts(prev => prev.map(p => {
-      if (p.id !== postId) return p;
-      const isSelected = p.selectedIds.includes(itemId);
-      return {
-        ...p,
-        selectedIds: isSelected 
-          ? p.selectedIds.filter(id => id !== itemId)
-          : [...p.selectedIds, itemId]
-      };
-    }));
-  }
-
-  function togglePostSelection(postId) {
-    setPosts(prev => prev.map(p => {
-      if (p.id !== postId) return p;
-      const allSelected = p.selectedIds.length === p.items.length;
-      return {
-        ...p,
-        selectedIds: allSelected ? [] : p.items.map(i => i.id)
-      };
-    }));
-  }
-
-  function selectAllGlobal() {
-    setPosts(prev => prev.map(p => ({
-      ...p,
-      selectedIds: p.items.map(i => i.id)
-    })));
-  }
-
-  function clearSelectionGlobal() {
-    setPosts(prev => prev.map(p => ({
-      ...p,
-      selectedIds: []
-    })));
-  }
-
-  const totalSelectedCount = posts.reduce((sum, p) => sum + p.selectedIds.length, 0);
 
   function clearAll() {
-    setPosts([]);
+    abortRef.current?.abort();
+    loadedUrlRef.current = "";
     setPostUrl("");
     setBulkText("");
-    setActivePostId(null);
-    setActiveViewerIndex(null);
+    setPosts([]);
+    setViewerPostId(null);
+    setViewerItemIndex(null);
     setIsViewerFullscreen(false);
     setOcrById({});
     setOcrLoadingId(null);
     setOcrProgress(0);
-    setPhase("idle");
-    setPhaseMsg("");
+    setGlobalPhase("idle");
+    setGlobalPhaseMsg("");
     setLoading(false);
-  }
-
-  function clearHistory() {
-    setIgHistory([]);
-    localStorage.removeItem("ig-history");
   }
 
   async function copyDetail(label, value, sourceRef) {
     try {
       await writeClipboardText(value);
-      setPhase("done");
-      setPhaseMsg(`${label} copied.`);
+      setGlobalPhase("done");
+      setGlobalPhaseMsg(`${label} copied.`);
       notify("Copied", `${label} copied.`);
     } catch {
       if (sourceRef?.current) {
         try {
           copyTextareaText(sourceRef.current);
-          setPhase("done");
-          setPhaseMsg(`${label} copied.`);
+          setGlobalPhase("done");
+          setGlobalPhaseMsg(`${label} copied.`);
           notify("Copied", `${label} copied.`);
           return;
         } catch {
           sourceRef.current.focus();
           sourceRef.current.select();
           sourceRef.current.setSelectionRange(0, sourceRef.current.value.length);
-          setPhase("done");
-          setPhaseMsg(`${label} selected. Press Ctrl+C to copy.`);
+          setGlobalPhase("done");
+          setGlobalPhaseMsg(`${label} selected. Press Ctrl+C to copy.`);
           return;
         }
       }
-      setPhase("failed");
-      setPhaseMsg("Could not copy. Select the value and copy it manually.");
+      setGlobalPhase("failed");
+      setGlobalPhaseMsg("Could not copy. Select the value and copy it manually.");
     }
   }
 
+  const totalItems = posts.reduce((sum, p) => sum + p.items.length, 0);
+  const firstPost = posts[0] || null;
+  const displayedMeta = posts.length === 1 ? firstPost?.meta : null;
+  const displayedSizing = displayedMeta ? getMediaSizing(firstPost?.items || []) : null;
+
   const statusStyle =
-    phase === "done"
+    globalPhase === "done"
       ? "border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800/30 dark:bg-emerald-950/20 dark:text-emerald-400"
-      : phase === "failed"
+      : globalPhase === "failed"
         ? "border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/30 dark:bg-amber-950/20 dark:text-amber-400"
-        : phase === "partial"
+        : globalPhase === "partial"
           ? "border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-800/30 dark:bg-sky-950/20 dark:text-sky-400"
           : "border-zinc-200 bg-white text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300";
-  const activeItem = activeViewerIndex === null ? null : activeItems[activeViewerIndex] || null;
-  const activeOcr = activeItem ? ocrById[activeItem.id] : null;
-  const activeOcrText = activeOcr?.text || "";
-  const isReadingActive = activeItem && ocrLoadingId === activeItem.id;
 
   return (
     <>
-    <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[26em_1fr]">
-      <aside className="grid content-start gap-5 panel-enter-aside">
-        <Card ref={sidebarCardRef} className="flex flex-col gap-5 p-5">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-              Carousel Capture
-            </p>
-            <h2 className="mt-1 text-2xl font-black italic tracking-tight text-zinc-900 dark:text-zinc-50">
-              Instagram Download
-            </h2>
-          </div>
-
-          <div className="flex flex-col gap-3">
-            <div className="flex gap-2 relative transition-all duration-300">
-              {!bulkMode ? (
-                <Input
-                  ref={inputRef}
-                  value={postUrl}
-                  onChange={(event) => setPostUrl(event.target.value)}
-                  onPaste={handlePaste}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") loadPost(postUrl);
-                  }}
-                  placeholder="https://www.instagram.com/p/..."
-                  className="flex-1"
-                  aria-label="Instagram link"
-                />
-              ) : (
-                <textarea
-                  value={bulkText}
-                  onChange={(event) => setBulkText(event.target.value)}
-                  placeholder="Paste multiple Instagram URLs here (newlines, commas, or spaces)..."
-                  className="flex-1 px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 transition-all focus:border-zinc-500 focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:focus:ring-white/5 font-mono resize-none shadow-inner-sm min-h-[120px]"
-                />
-              )}
-              {!bulkMode && (
-                <Button
-                  icon={Clipboard}
-                  variant="secondary"
-                  size="icon"
-                  onClick={pasteAndLoad}
-                  title="Paste and load"
-                  aria-label="Paste and load Instagram link"
-                />
-              )}
+      <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[26em_1fr]">
+        <aside className="grid content-start gap-5 panel-enter-aside">
+          <Card ref={sidebarCardRef} className="flex flex-col gap-5 p-5">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                Carousel Capture
+              </p>
+              <h2 className="mt-1 text-2xl font-black italic tracking-tight text-zinc-900 dark:text-zinc-50">
+                Instagram Download
+              </h2>
             </div>
-            
-            {bulkMode && bulkText.trim().length > 0 && (() => {
-              const urls = bulkText.split(/[\n,\s]+/).map(u => u.trim()).filter(Boolean);
-              const uniqueUrls = [...new Set(urls)];
-              const parsedUrls = uniqueUrls.map(url => ({
-                url,
-                valid: normalizeInstagramUrl(url) !== ""
-              }));
-              const validCount = parsedUrls.filter(p => p.valid).length;
-              const invalidUrls = parsedUrls.filter(p => !p.valid).map(p => p.url);
 
-              return (
-                <div className="flex flex-col gap-2 p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border border-zinc-200 dark:border-zinc-800">
-                  <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                    <span>{parsedUrls.length} total</span>
-                    <div className="flex gap-3">
-                      <span className="text-emerald-600 dark:text-emerald-400">{validCount} valid</span>
-                      {invalidUrls.length > 0 && <span className="text-red-600 dark:text-red-400">{invalidUrls.length} invalid</span>}
-                    </div>
-                  </div>
-                  {invalidUrls.length > 0 && (
-                    <div className="text-xs text-red-500 font-mono overflow-y-auto max-h-24 pr-1 custom-scrollbar">
-                      <p className="font-bold mb-1 uppercase tracking-widest text-[9px]">Invalid links:</p>
-                      {invalidUrls.map((url, i) => (
-                        <div key={i} className="truncate line-through opacity-70 mb-0.5">{url}</div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
-            
-            <div className="flex gap-2">
-              <Button
-                className="flex-1"
-                icon={loading ? Loader2 : RefreshCw}
-                disabled={(!bulkMode && !postUrl) || (bulkMode && !bulkText) || loading}
-                onClick={() => {
-                  if (bulkMode) {
-                    const urls = bulkText.split(/[\n,\s]+/).map(u => u.trim()).filter(Boolean);
-                    const validUrls = [...new Set(urls)].filter(u => normalizeInstagramUrl(u) !== "");
-                    if (validUrls.length > 0) {
-                      processMultipleUrls(validUrls);
-                      setBulkMode(false);
-                      setBulkText("");
-                    }
-                  } else {
-                    loadPost(postUrl);
-                  }
-                }}
-              >
-                {loading ? "Loading" : "Load"}
-              </Button>
-              <Button
-                variant={bulkMode ? "primary" : "secondary"}
-                onClick={() => setBulkMode(!bulkMode)}
-              >
-                {bulkMode ? "Single Link" : "Bulk Add"}
-              </Button>
-              <Button
-                icon={X}
-                variant="secondary"
-                disabled={(!postUrl && !posts.length && !bulkText)}
-                onClick={clearAll}
-              >
-                Clear
-              </Button>
-            </div>
-          </div>
-
-          {phaseMsg && (
-            <div
-              className={`flex items-start gap-2 rounded-2xl border p-3 text-[11px] font-medium ${statusStyle}`}
-            >
-              {loading ? (
-                <Loader2 size={13} className="mt-0.5 shrink-0 animate-spin" />
-              ) : phase === "failed" ? (
-                <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-              ) : (
-                <Link size={13} className="mt-0.5 shrink-0" />
-              )}
-              <span className="leading-relaxed">{phaseMsg}</span>
-            </div>
-          )}
-
-          {posts.length > 0 && (
-            <div className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/30">
-              <div className="flex items-center justify-between">
-                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Active Queue</p>
-                <Badge variant="black">{posts.length} Post{posts.length === 1 ? '' : 's'}</Badge>
+            <div className="flex flex-col gap-3">
+              <div className="flex gap-2 relative transition-all duration-300">
+                {!bulkMode ? (
+                  <Input
+                    ref={inputRef}
+                    value={postUrl}
+                    onChange={(event) => setPostUrl(event.target.value)}
+                    onPaste={handlePaste}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") loadPost();
+                    }}
+                    placeholder="https://www.instagram.com/p/..."
+                    className="flex-1"
+                    aria-label="Instagram link"
+                  />
+                ) : (
+                  <textarea
+                    value={bulkText}
+                    onChange={(event) => setBulkText(event.target.value)}
+                    placeholder="Paste multiple Instagram URLs here (newlines, commas, or spaces)..."
+                    className="flex-1 px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 transition-all focus:border-zinc-500 focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:focus:ring-white/5 font-mono resize-none shadow-inner-sm min-h-[120px]"
+                  />
+                )}
+                {!bulkMode && (
+                  <Button
+                    icon={Clipboard}
+                    variant="secondary"
+                    size="icon"
+                    onClick={pasteAndLoad}
+                    title="Paste and load"
+                    aria-label="Paste and load Instagram link"
+                  />
+                )}
               </div>
-              <div className="mt-2 flex -space-x-2 overflow-hidden">
-                {posts.slice(0, 5).map((p, i) => (
-                  <div key={p.id} className="inline-block h-6 w-6 rounded-full ring-2 ring-white dark:ring-zinc-900 overflow-hidden bg-zinc-200 dark:bg-zinc-800">
-                    {p.items[0] && <img src={p.items[0].previewUrl} alt="" className="h-full w-full object-cover" />}
+
+              {bulkMode && bulkText.trim().length > 0 && (() => {
+                const urls = bulkText.split(/[\n,\s]+/).map((u) => u.trim()).filter(Boolean);
+                const uniqueUrls = [...new Set(urls)];
+                const parsedUrls = uniqueUrls.map((url) => ({
+                  url,
+                  valid: normalizeInstagramUrl(url) !== "",
+                }));
+                const validCount = parsedUrls.filter((p) => p.valid).length;
+                const invalidUrls = parsedUrls.filter((p) => !p.valid).map((p) => p.url);
+
+                return (
+                  <div className="flex flex-col gap-2 p-3 bg-zinc-50 dark:bg-zinc-900/50 rounded-xl border border-zinc-200 dark:border-zinc-800">
+                    <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-zinc-500">
+                      <span>{parsedUrls.length} total</span>
+                      <div className="flex gap-3">
+                        <span className="text-emerald-600 dark:text-emerald-400">{validCount} valid</span>
+                        {invalidUrls.length > 0 && (
+                          <span className="text-red-600 dark:text-red-400">{invalidUrls.length} invalid</span>
+                        )}
+                      </div>
+                    </div>
+                    {invalidUrls.length > 0 && (
+                      <div className="text-xs text-red-500 font-mono overflow-y-auto max-h-24 pr-1 custom-scrollbar">
+                        <p className="font-bold mb-1 uppercase tracking-widest text-[9px]">Invalid links:</p>
+                        {invalidUrls.map((url, i) => (
+                          <div key={i} className="truncate line-through opacity-70 mb-0.5">{url}</div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              <div className="flex gap-2">
+                <Button
+                  className="flex-1"
+                  icon={loading ? Loader2 : RefreshCw}
+                  disabled={(!bulkMode && !postUrl) || (bulkMode && !bulkText) || loading}
+                  onClick={() => {
+                    if (bulkMode) {
+                      const urls = bulkText.split(/[\n,\s]+/).map((u) => u.trim()).filter(Boolean);
+                      const validUrls = [...new Set(urls)].filter((u) => normalizeInstagramUrl(u) !== "");
+                      if (validUrls.length > 0) {
+                        processMultipleUrls(validUrls);
+                        setBulkMode(false);
+                        setBulkText("");
+                      }
+                    } else {
+                      loadPost();
+                    }
+                  }}
+                >
+                  {loading ? "Loading" : "Load"}
+                </Button>
+                <Button
+                  variant={bulkMode ? "primary" : "secondary"}
+                  onClick={() => setBulkMode(!bulkMode)}
+                >
+                  {bulkMode ? "Single Link" : "Bulk Add"}
+                </Button>
+                <Button
+                  icon={X}
+                  variant="secondary"
+                  disabled={(!postUrl && !posts.length && !bulkText)}
+                  onClick={clearAll}
+                >
+                  Clear
+                </Button>
+              </div>
+            </div>
+
+            {globalPhaseMsg && (
+              <div
+                className={`flex items-start gap-2 rounded-2xl border p-3 text-[11px] font-medium ${statusStyle}`}
+              >
+                {loading ? (
+                  <Loader2 size={13} className="mt-0.5 shrink-0 animate-spin" />
+                ) : globalPhase === "failed" ? (
+                  <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                ) : (
+                  <Link size={13} className="mt-0.5 shrink-0" />
+                )}
+                <span className="leading-relaxed">{globalPhaseMsg}</span>
+              </div>
+            )}
+
+            {posts.length > 1 && (
+              <div className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800">
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                  Bulk Summary
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <div className="rounded-xl bg-white p-2 dark:bg-zinc-950/50">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Posts</p>
+                    <p className="mt-1 font-mono text-sm font-black text-zinc-900 dark:text-zinc-100">{posts.length}</p>
+                  </div>
+                  <div className="rounded-xl bg-white p-2 dark:bg-zinc-950/50">
+                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Items</p>
+                    <p className="mt-1 font-mono text-sm font-black text-zinc-900 dark:text-zinc-100">{totalItems}</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {displayedMeta && (
+              <div className="rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-[11px] font-black text-zinc-900 dark:text-zinc-100">
+                      {displayedMeta.ownerUsername
+                        ? `@${displayedMeta.ownerUsername}`
+                        : displayedMeta.shortcode}
+                    </p>
+                    <p className="mt-1 font-mono text-[10px] uppercase tracking-widest text-zinc-400">
+                      {displayedMeta.source} extraction
+                    </p>
+                  </div>
+                  <Badge variant={displayedMeta.type === "reel" ? "warning" : "default"}>
+                    {displayedMeta.type === "reel" ? (
+                      <>
+                        <Film size={10} /> Reel
+                      </>
+                    ) : (
+                      <>
+                        <Layers size={10} /> Post
+                      </>
+                    )}
+                  </Badge>
+                </div>
+
+                {displayedSizing && (
+                  <div className="mt-3 grid gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="rounded-xl bg-white p-2 dark:bg-zinc-950/50">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Ratio</p>
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <span className="font-mono text-[11px] font-black text-zinc-900 dark:text-zinc-100">
+                            {displayedSizing.ratio}
+                          </span>
+                          <button
+                            type="button"
+                            onPointerDown={() => {
+                              copyDetail("Aspect ratio", displayedSizing.ratio);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                copyDetail("Aspect ratio", displayedSizing.ratio);
+                              }
+                            }}
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white text-zinc-500 shadow-sm transition-colors hover:text-zinc-950 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+                            title="Copy aspect ratio"
+                            aria-label="Copy aspect ratio"
+                          >
+                            <Copy size={13} />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl bg-white p-2 dark:bg-zinc-950/50">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Size</p>
+                        <div className="mt-1 flex items-center justify-between gap-2">
+                          <span className="font-mono text-[11px] font-black text-zinc-900 dark:text-zinc-100">
+                            W {displayedSizing.width} &middot; H {displayedSizing.height}
+                          </span>
+                          <button
+                            type="button"
+                            onPointerDown={() => {
+                              copyDetail("Width and height", displayedSizing.sizeText);
+                            }}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter" || event.key === " ") {
+                                event.preventDefault();
+                                copyDetail("Width and height", displayedSizing.sizeText);
+                              }
+                            }}
+                            className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-white text-zinc-500 shadow-sm transition-colors hover:text-zinc-950 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+                            title="Copy width and height"
+                            aria-label="Copy width and height"
+                          >
+                            <Copy size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onPointerDown={() => {
+                        copyDetail("Ratio and size", displayedSizing.combinedText);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          copyDetail("Ratio and size", displayedSizing.combinedText);
+                        }
+                      }}
+                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-white/60 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-zinc-700 transition-colors hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                    >
+                      <Copy size={12} />
+                      Copy Both
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {posts.length > 0 && !loading && (
+              <Button icon={FileArchive} onClick={() => setDownloadModalOpen(true)} className="w-full">
+                Download All
+              </Button>
+            )}
+          </Card>
+        </aside>
+
+        <section className="grid content-start gap-5 panel-enter-main">
+          {loading && posts.length === 0 && (
+            <Card
+              className="flex flex-col p-5 lg:overflow-hidden"
+              style={mediaHeight ? { height: `${mediaHeight}px` } : undefined}
+            >
+              <div className="min-h-0 space-y-3 overflow-y-auto pr-1 lg:flex-1">
+                {[0, 1, 2].map((item) => (
+                  <div
+                    key={item}
+                    className="flex gap-3 rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800"
+                  >
+                    <div className="skeleton h-24 w-24 shrink-0 rounded-2xl" />
+                    <div className="grid flex-1 content-center gap-2">
+                      <div className="skeleton h-4 w-2/3" />
+                      <div className="skeleton h-3 w-1/3" />
+                    </div>
                   </div>
                 ))}
-                {posts.length > 5 && <div className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-zinc-100 dark:bg-zinc-800 text-[8px] font-bold text-zinc-500 ring-2 ring-white dark:ring-zinc-900">+{posts.length - 5}</div>}
               </div>
-            </div>
+            </Card>
           )}
 
-          {posts.length > 0 && !loading && (
-            <div className="relative">
-              <Button 
-                icon={FileArchive} 
-                onClick={() => setDownloadMenuOpen(!downloadMenuOpen)} 
-                className="w-full"
-              >
-                Download All...
-              </Button>
-              
-              {downloadMenuOpen && typeof document !== "undefined" && createPortal(
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 sm:p-8 animate-in fade-in duration-300">
-                  <div 
-                    className="absolute inset-0 bg-zinc-950/40 backdrop-blur-sm" 
-                    onClick={() => setDownloadMenuOpen(false)}
+          {posts.map((post, postIndex) => (
+            <Card
+              key={post.id}
+              className="flex flex-col p-5 lg:overflow-hidden"
+              style={posts.length === 1 && mediaHeight ? { height: `${mediaHeight}px` } : undefined}
+            >
+              <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                    {post.meta?.ownerUsername ? `@${post.meta.ownerUsername}` : `Post ${postIndex + 1}`}
+                  </p>
+                  <h3 className="mt-0.5 text-xl font-black italic tracking-tight text-zinc-900 dark:text-zinc-50">
+                    {post.items.length} item{post.items.length === 1 ? "" : "s"}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={post.meta?.type === "reel" ? "warning" : "success"}>
+                    {post.meta?.type === "reel" ? "Reel" : "Ready"}
+                  </Badge>
+                  <Button
+                    icon={Trash2}
+                    size="icon"
+                    variant="danger"
+                    onClick={() => deletePost(post.id)}
+                    title="Remove this post"
+                    aria-label="Remove this post"
                   />
-                  <div className="relative w-full max-w-md bg-white dark:bg-zinc-900 rounded-[40px] border border-zinc-200 dark:border-zinc-800 shadow-[0_30px_70px_rgba(0,0,0,0.3)] overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-8 duration-500">
-                    <div className="flex items-center justify-between p-8 pb-4">
-                      <div>
-                        <h4 className="text-lg font-black tracking-tight text-zinc-900 dark:text-zinc-100">Export Options</h4>
-                        <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mt-1">{totalSelectedCount} items ready for batch</p>
-                      </div>
-                      <Button 
-                        variant="secondary" 
-                        size="icon" 
-                        onClick={() => setDownloadMenuOpen(false)}
-                        className="h-10 w-10 rounded-full bg-zinc-100 dark:bg-zinc-800 border-none"
-                        icon={X}
+                </div>
+              </div>
+
+              <div className="grid min-h-0 gap-3 overflow-y-auto pr-1 lg:flex-1 lg:overscroll-contain">
+                {post.items.map((item, index) => (
+                  <div
+                    key={item.id}
+                    className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-[9rem_1fr_auto]"
+                  >
+                    <button
+                      type="button"
+                      onClick={() => openViewer(post.id, index)}
+                      className="group relative aspect-square overflow-hidden rounded-2xl bg-white/60 text-left outline-none ring-offset-2 transition-transform hover:scale-[1.015] focus-visible:ring-2 focus-visible:ring-zinc-950 dark:bg-zinc-950 dark:ring-offset-zinc-900 dark:focus-visible:ring-white"
+                      aria-label={`Open ${item.name} preview`}
+                    >
+                      <img
+                        src={item.previewUrl}
+                        alt=""
+                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                       />
+                      <span className="absolute inset-x-3 bottom-3 inline-flex items-center justify-center gap-1.5 rounded-xl bg-black/70 px-2 py-1.5 text-[9px] font-black uppercase tracking-widest text-white opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
+                        <ImageIcon size={11} />
+                        Expand
+                      </span>
+                      {item.type === "video" && (
+                        <span className="absolute left-3 top-3 inline-flex items-center gap-1 rounded-lg bg-black/70 px-2 py-1 text-[8px] font-black uppercase tracking-widest text-white backdrop-blur-md">
+                          <Film size={10} />
+                          Video
+                        </span>
+                      )}
+                    </button>
+
+                    <div className="grid content-center gap-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant="black">
+                          {String(item.index + 1).padStart(2, "0")}
+                        </Badge>
+                        <Badge variant={item.type === "video" ? "warning" : "default"}>
+                          {item.type === "video" ? (
+                            <>
+                              <Film size={10} /> Video
+                            </>
+                          ) : (
+                            <>
+                              <ImageIcon size={10} /> Image
+                            </>
+                          )}
+                        </Badge>
+                      </div>
+                      <p className="break-all text-sm font-black text-zinc-900 dark:text-zinc-100">
+                        {item.name}
+                      </p>
+                      <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
+                        {formatDimensions(item)}
+                      </p>
                     </div>
 
-                    <div className="p-8 pt-4 space-y-8">
-                      <div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-4 ml-1">Export Format</p>
-                        <div className="grid grid-cols-3 gap-3">
-                          {['PNG', 'JPEG', 'PSD'].map(f => {
-                            const isPSD = f === 'PSD';
-                            return (
-                              <div key={f} className="relative group">
-                                <button
-                                  disabled={isPSD}
-                                  onClick={() => setDownloadOptions(prev => ({ ...prev, format: f }))}
-                                  className={`w-full px-2 py-4 rounded-2xl text-xs font-black transition-all ${
-                                    isPSD ? 'opacity-40 cursor-not-allowed bg-zinc-50 dark:bg-zinc-800/50 grayscale' :
-                                    downloadOptions.format === f ? 'bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 shadow-xl scale-[1.02]' : 
-                                    'bg-zinc-100 dark:bg-zinc-800 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-900 dark:hover:text-white'
-                                  }`}
-                                >
-                                  {f}
-                                </button>
-                                {isPSD && (
-                                  <div className="absolute -top-10 left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 pointer-events-none transition-all transform group-hover:-translate-y-1">
-                                    <span className="bg-zinc-900 text-white text-[8px] px-3 py-1.5 rounded-full whitespace-nowrap shadow-2xl font-black uppercase tracking-widest ring-4 ring-white/10">Not available</span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
+                    <div className="flex items-center gap-2 sm:flex-col sm:justify-center">
+                      <Button
+                        icon={Download}
+                        size="icon"
+                        onClick={() => downloadOne(item)}
+                        title="Download"
+                        aria-label={`Download ${item.name}`}
+                      />
+                      <Button
+                        icon={Trash2}
+                        size="icon"
+                        variant="danger"
+                        onClick={() => deleteItem(post.id, item.id)}
+                        title="Delete"
+                        aria-label={`Delete ${item.name}`}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ))}
 
-                      <div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-4 ml-1">Download Scope</p>
-                        <div className="space-y-2">
-                          {[
-                            { id: 'everything', label: 'All Loaded Media', sub: 'Downloads every post in the current list' },
-                            { id: 'all-carousels', label: 'All Selected Items', sub: `${totalSelectedCount} items manually checked`, count: totalSelectedCount },
-                            { id: 'selected-carousel', label: 'Current Carousel Only', sub: 'Ignores other posts in the queue' },
-                          ].map(s => (
-                            <button
-                              key={s.id}
-                              onClick={() => setDownloadOptions(prev => ({ ...prev, scope: s.id }))}
-                              className={`w-full text-left px-5 py-4 rounded-[24px] transition-all border-2 ${
-                                downloadOptions.scope === s.id 
-                                  ? 'bg-zinc-50 dark:bg-zinc-800/50 border-zinc-950 dark:border-white text-zinc-900 dark:text-zinc-100 shadow-sm' 
-                                  : 'bg-transparent border-zinc-100 dark:border-zinc-800 text-zinc-500 hover:border-zinc-300 dark:hover:border-zinc-600'
-                              }`}
-                            >
-                              <div className="flex justify-between items-center">
-                                <div>
-                                  <p className="text-xs font-black">{s.label}</p>
-                                  <p className="text-[9px] font-medium opacity-60 mt-0.5">{s.sub}</p>
-                                </div>
-                                {s.count !== undefined && (
-                                  <Badge variant="black" className="px-2 py-0.5 text-[9px] font-black">{s.count}</Badge>
-                                )}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+          {posts.length === 0 && !loading && (
+            <Card className="overflow-hidden">
+              <div className="flex min-h-48 items-center justify-center bg-white/60 p-4 dark:bg-zinc-950/60">
+                <div className="text-center">
+                  <div className="icon-float mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+                    <Link className="text-zinc-400 dark:text-zinc-500" size={28} />
+                  </div>
+                  <p className="text-base font-black italic tracking-tight text-zinc-900 dark:text-zinc-100">
+                    Paste an Instagram carousel link
+                  </p>
+                  <p className="mt-2 text-xs font-medium uppercase tracking-widest text-zinc-400">
+                    It will load automatically
+                  </p>
+                </div>
+              </div>
+            </Card>
+          )}
+        </section>
+      </div>
 
-                      <div>
-                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500 mb-4 ml-1">File Organization</p>
-                        <div className="flex bg-zinc-100 dark:bg-zinc-800 p-2 rounded-[24px] gap-2">
-                          {[
-                            { id: 'separate', label: 'Folder Mode', sub: 'Nested' },
-                            { id: 'flat', label: 'Flat List', sub: 'Single level' },
-                          ].map(o => (
-                            <button
-                              key={o.id}
-                              onClick={() => setDownloadOptions(prev => ({ ...prev, organize: o.id }))}
-                              className={`flex-1 py-3 rounded-[18px] transition-all ${
-                                downloadOptions.organize === o.id 
-                                  ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-100 shadow-lg scale-[1.02]' 
-                                  : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'
-                              }`}
-                            >
-                              <p className="text-[10px] font-black">{o.label}</p>
-                              <p className="text-[8px] opacity-60 font-bold uppercase tracking-tighter">{o.sub}</p>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+      {activeItem &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            className={`fixed inset-0 z-[9999] flex items-center justify-center ${
+              isViewerFullscreen ? "p-0" : "p-4 sm:p-8"
+            }`}
+          >
+            <div
+              className="absolute inset-0 bg-zinc-950/80 backdrop-blur-xl"
+              onClick={closeViewer}
+            />
+            <Card
+              className={`relative flex flex-col overflow-hidden bg-white shadow-2xl transition-all duration-500 dark:bg-zinc-900 ${
+                isViewerFullscreen
+                  ? "h-full w-full rounded-none border-0"
+                  : "max-h-[94vh] w-full max-w-6xl rounded-[32px] border border-zinc-200 dark:border-zinc-800"
+              }`}
+            >
+              <div className="flex shrink-0 items-center justify-between gap-4 border-b border-zinc-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900 sm:px-8">
+                <div className="min-w-0">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                    Expanded Preview
+                  </p>
+                  <h3 className="mt-1 truncate text-base font-black tracking-tight text-zinc-900 dark:text-zinc-50">
+                    {activeItem.name}
+                  </h3>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={activeItem.type === "video" ? "warning" : "default"}>
+                    {String((viewerItemIndex || 0) + 1).padStart(2, "0")} /{" "}
+                    {String(activeItems.length).padStart(2, "0")}
+                  </Badge>
+                  <Button
+                    icon={isViewerFullscreen ? Minimize2 : Maximize2}
+                    size="icon"
+                    variant={isViewerFullscreen ? "primary" : "secondary"}
+                    onClick={() => setIsViewerFullscreen((value) => !value)}
+                    aria-label={isViewerFullscreen ? "Exit full screen" : "Open full screen"}
+                    title={isViewerFullscreen ? "Exit full screen" : "Open full screen"}
+                  />
+                  <Button
+                    icon={X}
+                    size="icon"
+                    variant="secondary"
+                    onClick={closeViewer}
+                    aria-label="Close preview"
+                    title="Close preview"
+                  />
+                </div>
+              </div>
 
-                      <div className="pt-2">
-                        <Button 
-                          onClick={downloadAll} 
-                          className="w-full py-7 rounded-[28px] text-base font-black shadow-2xl shadow-zinc-950/20" 
-                          size="lg"
-                          disabled={loading || (downloadOptions.scope === 'all-carousels' && totalSelectedCount === 0)}
+              <div className="grid min-h-0 flex-1 bg-white/60 dark:bg-zinc-950 lg:grid-cols-[minmax(0,1fr)_22rem]">
+                <div
+                  className={`relative flex items-center justify-center overflow-hidden bg-zinc-950 p-4 ${
+                    isViewerFullscreen ? "min-h-0" : "min-h-[360px] sm:min-h-[520px]"
+                  }`}
+                >
+                  {activeItems.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => moveViewer(-1)}
+                        className="absolute left-4 top-1/2 z-10 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-2xl bg-white/90 text-zinc-950 shadow-xl transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                        aria-label="Previous media"
+                        title="Previous media"
+                      >
+                        <ChevronLeft size={24} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveViewer(1)}
+                        className="absolute right-4 top-1/2 z-10 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-2xl bg-white/90 text-zinc-950 shadow-xl transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                        aria-label="Next media"
+                        title="Next media"
+                      >
+                        <ChevronRight size={24} />
+                      </button>
+                    </>
+                  )}
+
+                  {activeItem.type === "video" ? (
+                    <video
+                      key={activeItem.id}
+                      src={getPlayableMediaUrl(activeItem)}
+                      poster={activeItem.previewUrl}
+                      controls
+                      playsInline
+                      className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl"
+                    />
+                  ) : (
+                    <img
+                      key={activeItem.id}
+                      src={activeItem.previewUrl}
+                      alt=""
+                      className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl"
+                    />
+                  )}
+                </div>
+
+                <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-t border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 lg:border-l lg:border-t-0">
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                      Media Details
+                    </p>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="rounded-2xl bg-white p-3 dark:bg-zinc-950/70">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Ratio</p>
+                        <p className="mt-1 font-mono text-sm font-black text-zinc-900 dark:text-zinc-100">
+                          {formatAspectRatio(activeItem.width, activeItem.height)}
+                        </p>
+                      </div>
+                      <div className="rounded-2xl bg-white p-3 dark:bg-zinc-950/70">
+                        <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">Size</p>
+                        <p className="mt-1 font-mono text-sm font-black text-zinc-900 dark:text-zinc-100">
+                          {activeItem.width || "?"} x {activeItem.height || "?"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid min-h-0 flex-1 gap-3 rounded-3xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/50">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                          <FileText size={13} />
+                          Detected Text
+                        </p>
+                        <p className="mt-1 text-[10px] font-medium text-zinc-400">
+                          {activeItem.type === "video"
+                            ? "Reads the video thumbnail"
+                            : "Reads the visible image"}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-2">
+                        <Button
+                          icon={FileText}
+                          size="sm"
+                          onClick={() => readImageText(activeItem)}
+                          disabled={isReadingActive}
                         >
-                          Start Batch Download
+                          {isReadingActive ? `${ocrProgress}%` : "Read"}
+                        </Button>
+                        <Button
+                          icon={Copy}
+                          size="sm"
+                          variant="secondary"
+                          disabled={!activeOcrText || activeOcr?.error}
+                          onClick={() => copyDetail("Detected text", activeOcrText, ocrTextRef)}
+                        >
+                          Copy
                         </Button>
                       </div>
                     </div>
-                  </div>
-                </div>,
-                document.body
-              )}
-            </div>
-          )}
 
-          {igHistory.length > 0 && (
-            <div className="mt-2 pt-5 border-t border-zinc-100 dark:border-zinc-800">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2 text-zinc-500">
-                  <RefreshCw size={12} className="opacity-70" />
-                  <p className="text-[10px] font-black uppercase tracking-widest">Recent Downloads</p>
-                </div>
-                <button 
-                  onClick={clearHistory}
-                  className="text-[9px] font-black uppercase tracking-widest text-zinc-400 hover:text-red-500 transition-colors"
-                >
-                  Clear
-                </button>
-              </div>
-              
-              <div className="space-y-3 max-h-[320px] overflow-y-auto pr-2 custom-scrollbar">
-                {igHistory.map((h) => {
-                  const isExpanded = expandedHistoryId === h.id;
-                  return (
-                    <div key={h.id} className="flex flex-col gap-2 pb-3 border-b border-zinc-100/50 dark:border-zinc-800/50 last:border-0 last:pb-0">
-                      <div 
-                        className="flex gap-3 items-center cursor-pointer group"
-                        onClick={() => setExpandedHistoryId(isExpanded ? null : h.id)}
-                      >
-                        <div className="relative h-10 w-10 shrink-0 overflow-hidden rounded-xl bg-zinc-100 dark:bg-zinc-800 ring-1 ring-zinc-200/50 dark:ring-zinc-700/50">
-                          {h.thumbnail ? (
-                            <img src={h.thumbnail} alt="" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                          ) : (
-                            <div className="flex h-full w-full items-center justify-center text-zinc-400">
-                              <ImageIcon size={14} />
-                            </div>
-                          )}
-                          <div className="absolute bottom-0 right-0 bg-black/60 px-1 rounded-tl-md">
-                            <p className="text-[7px] font-black text-white">{h.mediaCount}</p>
+                    <div className="min-h-[9rem] max-h-[18rem] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                      {isReadingActive ? (
+                        <div className="grid h-full place-items-center text-center">
+                          <div>
+                            <Loader2 className="mx-auto mb-3 animate-spin text-zinc-400" size={24} />
+                            <p className="text-xs font-black uppercase tracking-widest text-zinc-500">Reading text</p>
+                            <p className="mt-1 font-mono text-[10px] text-zinc-400">{ocrProgress}%</p>
                           </div>
                         </div>
-                        
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-[11px] font-black text-zinc-800 dark:text-zinc-200 group-hover:text-zinc-950 dark:group-hover:text-white transition-colors">
-                            @{h.username}
+                      ) : activeOcrText ? (
+                        <textarea
+                          ref={ocrTextRef}
+                          aria-label="Detected text"
+                          value={activeOcrText}
+                          onChange={(event) => {
+                            setOcrById((current) => ({
+                              ...current,
+                              [activeItem.id]: {
+                                ...(current[activeItem.id] || {}),
+                                text: event.target.value,
+                              },
+                            }));
+                          }}
+                          className="min-h-[8rem] w-full resize-none bg-transparent text-sm font-medium leading-relaxed text-zinc-800 outline-none dark:text-zinc-100"
+                        />
+                      ) : (
+                        <div className="grid h-full place-items-center text-center">
+                          <p className="max-w-[14rem] text-xs font-medium leading-relaxed text-zinc-400">
+                            Tap Read to identify visible text, then copy it from here.
                           </p>
-                          <p className="mt-0.5 text-[9px] font-medium text-zinc-400">
-                            {new Date(h.date).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-
-                      {isExpanded && (
-                        <div className="flex gap-2 animate-in fade-in slide-in-from-top-1 duration-300">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPostUrl(h.url);
-                              loadPost(h.url);
-                            }}
-                            className="flex-1 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-[9px] font-black uppercase tracking-widest text-zinc-600 dark:text-zinc-300 transition-all flex items-center justify-center gap-2"
-                          >
-                            <RefreshCw size={10} />
-                            Re-Load
-                          </button>
-                          <a
-                            href={h.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={(e) => e.stopPropagation()}
-                            className="flex-1 py-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-[9px] font-black uppercase tracking-widest text-zinc-600 dark:text-zinc-300 transition-all flex items-center justify-center gap-2"
-                          >
-                            <Link size={10} />
-                            Visit
-                          </a>
                         </div>
                       )}
                     </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </Card>
-      </aside>
 
-      <section className="grid content-start gap-5 panel-enter-main">
-        {loading && !posts.length && (
-          <Card
-            className="flex flex-col p-5 lg:overflow-hidden"
-            style={mediaHeight ? { height: `${mediaHeight}px` } : undefined}
-          >
-            <div className="min-h-0 space-y-3 overflow-y-auto pr-1 lg:flex-1">
-              {[0, 1, 2].map((item) => (
-                <div
-                  key={item}
-                  className="flex gap-3 rounded-2xl border border-zinc-200 p-3 dark:border-zinc-800"
-                >
-                  <div className="skeleton h-24 w-24 shrink-0 rounded-2xl" />
-                  <div className="grid flex-1 content-center gap-2">
-                    <div className="skeleton h-4 w-2/3" />
-                    <div className="skeleton h-3 w-1/3" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        {posts.length > 0 && (
-          <div className="flex flex-col gap-5">
-            <div className="flex items-center justify-between px-2">
-              <div className="flex items-center gap-3">
-                <Badge variant="black">{posts.length} Posts</Badge>
-                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500">{totalSelectedCount} items selected</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <Button variant="secondary" size="sm" onClick={selectAllGlobal}>Select All</Button>
-                <Button variant="secondary" size="sm" onClick={clearSelectionGlobal}>Clear</Button>
-              </div>
-            </div>
-
-            <div className="space-y-6 max-h-[72vh] overflow-y-auto pr-2 custom-scrollbar pb-8">
-              {posts.map((post) => (
-                <Card key={post.id} className="flex flex-col p-5 overflow-hidden group/card relative">
-                  <div className="flex shrink-0 items-center justify-between gap-3 mb-4">
-                    <div className="flex items-center gap-3">
-                      <div className="relative">
-                        <div className="h-12 w-12 rounded-2xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center overflow-hidden ring-2 ring-zinc-100 dark:ring-zinc-800">
-                          {post.items[0] && <img src={post.items[0].previewUrl} alt="" className="h-full w-full object-cover" />}
-                        </div>
-                        <button
-                          onClick={() => togglePostSelection(post.id)}
-                          className={`absolute -top-1 -right-1 h-5 w-5 rounded-full border-2 flex items-center justify-center transition-all ${
-                            post.selectedIds.length === post.items.length 
-                            ? 'bg-zinc-950 border-zinc-950 text-white dark:bg-white dark:border-white dark:text-zinc-950' 
-                            : 'bg-white border-zinc-200 dark:bg-zinc-900 dark:border-zinc-700'
-                          }`}
-                        >
-                          {post.selectedIds.length === post.items.length && <div className="h-2 w-2 bg-current rounded-full" />}
-                        </button>
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-black text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
-                          @{post.meta?.ownerUsername || post.meta?.shortcode || "Instagram Post"}
-                          {post.selectedIds.length > 0 && <span className="text-[10px] text-zinc-400 font-normal">({post.selectedIds.length}/{post.items.length})</span>}
-                        </h3>
-                        <p className="font-mono text-[9px] uppercase tracking-widest text-zinc-400">
-                          {post.items.length} item{post.items.length === 1 ? "" : "s"} · {post.meta?.source || "External"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button 
-                        variant={post.expanded ? "primary" : "secondary"}
-                        size="sm" 
-                        onClick={() => togglePostExpansion(post.id)}
-                        icon={post.expanded ? Minimize2 : Maximize2}
-                        className="rounded-xl"
-                      >
-                        {post.expanded ? "Collapse" : "Expand"}
-                      </Button>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      {activeOcr?.confidence ? (
+                        <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
+                          Confidence {activeOcr.confidence}%
+                        </span>
+                      ) : (
+                        <span />
+                      )}
                       <Button
-                        variant="danger"
-                        size="icon"
-                        icon={Trash2}
-                        onClick={() => deletePost(post.id)}
-                        className="rounded-xl"
+                        icon={Copy}
+                        size="sm"
+                        variant="secondary"
+                        disabled={!activeOcrText || activeOcr?.error}
+                        onClick={() => copyDetail("Detected text", activeOcrText, ocrTextRef)}
+                      >
+                        Copy Text
+                      </Button>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+
+              <div className="shrink-0 border-t border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
+                <div className="flex gap-3 overflow-x-auto pb-1">
+                  {activeItems.map((item, index) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setViewerItemIndex(index)}
+                      className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border-2 bg-white/60 transition dark:bg-zinc-950 ${
+                        index === viewerItemIndex
+                          ? "border-zinc-950 shadow-lg dark:border-white"
+                          : "border-transparent opacity-65 hover:opacity-100"
+                      }`}
+                      aria-label={`View ${item.name}`}
+                      title={item.name}
+                    >
+                      <img
+                        src={item.previewUrl}
+                        alt=""
+                        className="h-full w-full object-cover"
                       />
-                    </div>
-                  </div>
-
-                  {post.expanded && (
-                    <div className="grid gap-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                      {post.items.map((item, index) => (
-                        <div
-                          key={item.id}
-                          className="grid gap-3 rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900 sm:grid-cols-[9rem_1fr_auto]"
-                        >
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setActivePostId(post.id);
-                              openViewer(index);
-                            }}
-                            className="group relative aspect-square overflow-hidden rounded-2xl bg-white/60 text-left outline-none ring-offset-2 transition-transform hover:scale-[1.015] focus-visible:ring-2 focus-visible:ring-zinc-950 dark:bg-zinc-950 dark:ring-offset-zinc-900 dark:focus-visible:ring-white"
-                            aria-label={`Open ${item.name} preview`}
-                          >
-                            <img
-                              src={item.previewUrl}
-                              alt=""
-                              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                            />
-                            <span className="absolute inset-x-3 bottom-3 inline-flex items-center justify-center gap-1.5 rounded-xl bg-black/70 px-2 py-1.5 text-[9px] font-black uppercase tracking-widest text-white opacity-0 backdrop-blur-md transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
-                              <ImageIcon size={11} />
-                              Expand
-                            </span>
-                          </button>
-
-                          <div className="grid content-center gap-2">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <button
-                                onClick={() => toggleItemSelection(post.id, item.id)}
-                                className={`h-5 w-5 rounded-md border flex items-center justify-center transition-colors ${
-                                  post.selectedIds.includes(item.id) 
-                                  ? 'bg-zinc-950 border-zinc-950 text-white dark:bg-white dark:border-white dark:text-zinc-950' 
-                                  : 'border-zinc-200 dark:border-zinc-800'
-                                }`}
-                              >
-                                {post.selectedIds.includes(item.id) && <div className="h-2 w-2 bg-current rounded-full" />}
-                              </button>
-                              <Badge variant="black">
-                                {String(item.index + 1).padStart(2, "0")}
-                              </Badge>
-                              <Badge variant={item.type === "video" ? "warning" : "default"}>
-                                {item.type === "video" ? <Film size={10} /> : <ImageIcon size={10} />}
-                                <span className="ml-1">{item.type}</span>
-                              </Badge>
-                            </div>
-                            <p className="break-all text-sm font-black text-zinc-900 dark:text-zinc-100">
-                              {item.name}
-                            </p>
-                            <p className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
-                              {formatDimensions(item)}
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-2 sm:flex-col sm:justify-center">
-                            <Button
-                              icon={Download}
-                              size="icon"
-                              onClick={() => downloadOne(item)}
-                            />
-                            <Button
-                              icon={Trash2}
-                              size="icon"
-                              variant="danger"
-                              onClick={() => deleteOne(post.id, item.id)}
-                            />
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </Card>
-              ))}
-            </div>
-          </div>
+                      {item.type === "video" && (
+                        <span className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-lg bg-black/70 text-white">
+                          <Film size={12} />
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </Card>
+          </div>,
+          document.body,
         )}
 
-        {!posts.length && !loading && (
-          <Card className="overflow-hidden">
-            <div className="flex min-h-48 items-center justify-center bg-white/60 p-4 dark:bg-zinc-950/60">
-              <div className="text-center">
-                <div className="icon-float mx-auto mb-4 grid h-16 w-16 place-items-center rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-                  <Link className="text-zinc-400 dark:text-zinc-500" size={28} />
-                </div>
-                <p className="text-base font-black italic tracking-tight text-zinc-900 dark:text-zinc-100">
-                  Paste an Instagram carousel link
-                </p>
-                <p className="mt-2 text-xs font-medium uppercase tracking-widest text-zinc-400">
-                  It will load automatically
-                </p>
-              </div>
-            </div>
-          </Card>
-        )}
-      </section>
-    </div>
-
-    {activeItem &&
-      typeof document !== "undefined" &&
-      createPortal(
-        <div
-          className={`fixed inset-0 z-[9999] flex items-center justify-center ${
-            isViewerFullscreen ? "p-0" : "p-4 sm:p-8"
-          }`}
-        >
-        <div
-          className="absolute inset-0 bg-zinc-950/80 backdrop-blur-xl"
-          onClick={closeViewer}
-        />
-        <Card
-          className={`relative flex flex-col overflow-hidden bg-white shadow-2xl transition-all duration-500 dark:bg-zinc-900 ${
-            isViewerFullscreen
-              ? "h-full w-full rounded-none border-0"
-              : "max-h-[94vh] w-full max-w-6xl rounded-[32px] border border-zinc-200 dark:border-zinc-800"
-          }`}
-        >
-          <div className="flex shrink-0 items-center justify-between gap-4 border-b border-zinc-200 bg-white px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900 sm:px-8">
-            <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                Expanded Preview
-              </p>
-              <h3 className="mt-1 truncate text-base font-black tracking-tight text-zinc-900 dark:text-zinc-50">
-                {activeItem.name}
-              </h3>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant={activeItem.type === "video" ? "warning" : "default"}>
-                {String((activeViewerIndex || 0) + 1).padStart(2, "0")} /{" "}
-                {String(activeItems.length).padStart(2, "0")}
-              </Badge>
-              <Button
-                icon={isViewerFullscreen ? Minimize2 : Maximize2}
-                size="icon"
-                variant={isViewerFullscreen ? "primary" : "secondary"}
-                onClick={() => setIsViewerFullscreen((value) => !value)}
-                aria-label={isViewerFullscreen ? "Exit full screen" : "Open full screen"}
-                title={isViewerFullscreen ? "Exit full screen" : "Open full screen"}
-              />
-              <Button
-                icon={X}
-                size="icon"
-                variant="secondary"
-                onClick={closeViewer}
-                aria-label="Close preview"
-                title="Close preview"
-              />
-            </div>
-          </div>
-
-          <div className="grid min-h-0 flex-1 bg-white/60 dark:bg-zinc-950 lg:grid-cols-[minmax(0,1fr)_22rem]">
-            <div
-              className={`relative flex items-center justify-center overflow-hidden bg-zinc-950 p-4 ${
-                isViewerFullscreen ? "min-h-0" : "min-h-[360px] sm:min-h-[520px]"
-              }`}
-            >
-              {activeItems.length > 1 && (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => moveViewer(-1)}
-                    className="absolute left-4 top-1/2 z-10 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-2xl bg-white/90 text-zinc-950 shadow-xl transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                    aria-label="Previous media"
-                    title="Previous media"
-                  >
-                    <ChevronLeft size={24} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => moveViewer(1)}
-                    className="absolute right-4 top-1/2 z-10 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-2xl bg-white/90 text-zinc-950 shadow-xl transition hover:bg-white focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                    aria-label="Next media"
-                    title="Next media"
-                  >
-                    <ChevronRight size={24} />
-                  </button>
-                </>
-              )}
-
-              {activeItem.type === "video" ? (
-                <video
-                  key={activeItem.id}
-                  src={getPlayableMediaUrl(activeItem)}
-                  poster={activeItem.previewUrl}
-                  controls
-                  playsInline
-                  className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl"
-                />
-              ) : (
-                <img
-                  key={activeItem.id}
-                  src={activeItem.previewUrl}
-                  alt=""
-                  className="max-h-full max-w-full rounded-2xl object-contain shadow-2xl"
-                />
-              )}
-            </div>
-
-            <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-t border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900 lg:border-l lg:border-t-0">
-              <div>
-                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                  Media Details
-                </p>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <div className="rounded-2xl bg-white p-3 dark:bg-zinc-950/70">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">
-                      Ratio
-                    </p>
-                    <p className="mt-1 font-mono text-sm font-black text-zinc-900 dark:text-zinc-100">
-                      {formatAspectRatio(activeItem.width, activeItem.height)}
-                    </p>
-                  </div>
-                  <div className="rounded-2xl bg-white p-3 dark:bg-zinc-950/70">
-                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400">
-                      Size
-                    </p>
-                    <p className="mt-1 font-mono text-sm font-black text-zinc-900 dark:text-zinc-100">
-                      {activeItem.width || "?"} x {activeItem.height || "?"}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid min-h-0 flex-1 gap-3 rounded-3xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950/50">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                      <FileText size={13} />
-                      Detected Text
-                    </p>
-                    <p className="mt-1 text-[10px] font-medium text-zinc-400">
-                      {activeItem.type === "video"
-                        ? "Reads the video thumbnail"
-                        : "Reads the visible image"}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    <Button
-                      icon={FileText}
-                      size="sm"
-                      onClick={() => readImageText(activeItem)}
-                      disabled={isReadingActive}
-                    >
-                      {isReadingActive ? `${ocrProgress}%` : "Read"}
-                    </Button>
-                    <Button
-                      icon={Copy}
-                      size="sm"
-                      variant="secondary"
-                      disabled={!activeOcrText || activeOcr?.error}
-                      onClick={() => copyDetail("Detected text", activeOcrText, ocrTextRef)}
-                    >
-                      Copy
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="min-h-[9rem] max-h-[18rem] overflow-y-auto rounded-2xl border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-                  {isReadingActive ? (
-                    <div className="grid h-full place-items-center text-center">
-                      <div>
-                        <Loader2 className="mx-auto mb-3 animate-spin text-zinc-400" size={24} />
-                        <p className="text-xs font-black uppercase tracking-widest text-zinc-500">
-                          Reading text
-                        </p>
-                        <p className="mt-1 font-mono text-[10px] text-zinc-400">
-                          {ocrProgress}%
-                        </p>
-                      </div>
-                    </div>
-                  ) : activeOcrText ? (
-                    <textarea
-                      ref={ocrTextRef}
-                      aria-label="Detected text"
-                      value={activeOcrText}
-                      onChange={(event) => {
-                        setOcrById((current) => ({
-                          ...current,
-                          [activeItem.id]: {
-                            ...(current[activeItem.id] || {}),
-                            text: event.target.value,
-                          },
-                        }));
-                      }}
-                      className="min-h-[8rem] w-full resize-none bg-transparent text-sm font-medium leading-relaxed text-zinc-800 outline-none dark:text-zinc-100"
-                    />
-                  ) : (
-                    <div className="grid h-full place-items-center text-center">
-                      <p className="max-w-[14rem] text-xs font-medium leading-relaxed text-zinc-400">
-                        Tap Read to identify visible text, then copy it from here.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  {activeOcr?.confidence ? (
-                    <span className="font-mono text-[10px] uppercase tracking-widest text-zinc-400">
-                      Confidence {activeOcr.confidence}%
-                    </span>
-                  ) : (
-                    <span />
-                  )}
-                  <Button
-                    icon={Copy}
-                    size="sm"
-                    variant="secondary"
-                    disabled={!activeOcrText || activeOcr?.error}
-                    onClick={() => copyDetail("Detected text", activeOcrText, ocrTextRef)}
-                  >
-                    Copy Text
-                  </Button>
-                </div>
-              </div>
-            </aside>
-          </div>
-
-          <div className="shrink-0 border-t border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            <div className="flex gap-3 overflow-x-auto pb-1">
-              {activeItems.map((item, index) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setActiveViewerIndex(index)}
-                  className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border-2 bg-white/60 transition dark:bg-zinc-950 ${
-                    index === activeViewerIndex
-                      ? "border-zinc-950 shadow-lg dark:border-white"
-                      : "border-transparent opacity-65 hover:opacity-100"
-                  }`}
-                  aria-label={`View ${item.name}`}
-                  title={item.name}
-                >
-                  <img
-                    src={item.previewUrl}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                  {item.type === "video" && (
-                    <span className="absolute right-1.5 top-1.5 grid h-6 w-6 place-items-center rounded-lg bg-black/70 text-white">
-                      <Film size={12} />
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        </Card>
-      </div>,
-        document.body,
-      )}
+      <DownloadAllModal
+        open={downloadModalOpen}
+        onClose={() => setDownloadModalOpen(false)}
+        posts={posts}
+        viewerPostId={viewerPostId}
+        viewerItemIndex={viewerItemIndex}
+        onDownload={handleDownloadAll}
+      />
     </>
   );
 }
+
 

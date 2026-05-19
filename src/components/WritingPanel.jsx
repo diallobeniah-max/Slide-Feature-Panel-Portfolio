@@ -20,6 +20,8 @@ import {
   Upload,
 } from "lucide-react";
 import { Button, Card, Input } from "./ui.jsx";
+import FloatingToolPanel from "./ui/FloatingToolPanel.jsx";
+import PanelPopupButton from "./ui/PanelPopupButton.jsx";
 import { downloadBlob } from "../utils/media.js";
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28];
@@ -28,6 +30,15 @@ const FONT_FAMILIES = [
   { value: "serif", label: "Serif" },
   { value: "monospace", label: "Mono" },
 ];
+const WRITE_STATE_KEY = "contentflow-write-state-v1";
+
+function loadWriteState() {
+  try {
+    return JSON.parse(localStorage.getItem(WRITE_STATE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
 
 const notify = (title, message, type = "success") =>
   window.dispatchEvent(
@@ -161,19 +172,21 @@ function parseMarkdown(text) {
 }
 
 export default function WritingPanel() {
-  const [content, setContent] = useState("");
+  const savedWriteState = useMemo(loadWriteState, []);
+  const [content, setContent] = useState(savedWriteState.content || "");
   const [searchTerm, setSearchTerm] = useState("");
   const [replaceTerm, setReplaceTerm] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
   const [showSearchReplace, setShowSearchReplace] = useState(true);
   const [currentMatch, setCurrentMatch] = useState(-1);
-  const [fontSize, setFontSize] = useState(16);
-  const [fontFamily, setFontFamily] = useState("sans-serif");
-  const [textAlign, setTextAlign] = useState("left");
-  const [fileName, setFileName] = useState("document.md");
-  const [isMarkdown, setIsMarkdown] = useState(true);
-  const [isPreview, setIsPreview] = useState(false);
+  const [fontSize, setFontSize] = useState(savedWriteState.fontSize || 16);
+  const [fontFamily, setFontFamily] = useState(savedWriteState.fontFamily || "sans-serif");
+  const [textAlign, setTextAlign] = useState(savedWriteState.textAlign || "left");
+  const [fileName, setFileName] = useState(savedWriteState.fileName || "document.md");
+  const [isMarkdown, setIsMarkdown] = useState(savedWriteState.isMarkdown !== false);
+  const [isPreview, setIsPreview] = useState(Boolean(savedWriteState.isPreview));
+  const [isControlPanelOpen, setIsControlPanelOpen] = useState(false);
   const textareaRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -195,6 +208,26 @@ export default function WritingPanel() {
       current < 0 || current >= matches.length ? 0 : current,
     );
   }, [matches.length]);
+
+  useEffect(() => {
+    const nextState = {
+      content,
+      fileName,
+      fontSize,
+      fontFamily,
+      textAlign,
+      isMarkdown,
+      isPreview,
+    };
+    localStorage.setItem(WRITE_STATE_KEY, JSON.stringify(nextState));
+    const hasUnsaved = Boolean(content.trim());
+    window.dispatchEvent(
+      new CustomEvent("contentflow-unsaved-state", {
+        detail: { source: "write", hasUnsaved },
+      }),
+    );
+    window.contentFlow?.appState?.setUnsaved?.(hasUnsaved, "write");
+  }, [content, fileName, fontFamily, fontSize, isMarkdown, isPreview, textAlign]);
 
   function selectMatch(index) {
     const match = matches[index];
@@ -334,6 +367,229 @@ export default function WritingPanel() {
     textAlign,
   };
 
+  const renderControlPanel = () => (
+    <>
+      <Card className="p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+              Writing Studio
+            </p>
+            <p className="mt-1 font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
+              {wordCount} words / {content.length} chars
+            </p>
+          </div>
+          <Button size="sm" icon={RotateCcw} variant="secondary" onClick={resetDocument}>
+            Reset
+          </Button>
+        </div>
+
+        <div className="mt-4 space-y-3">
+          <Input
+            label="File Name"
+            value={fileName}
+            onChange={(event) => setFileName(event.target.value)}
+            placeholder="document.md"
+          />
+
+          <div className="grid grid-cols-2 gap-3">
+            <label className="grid gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+              Font Size
+              <select
+                value={fontSize}
+                onChange={(event) => setFontSize(Number(event.target.value))}
+                className="h-12 rounded-2xl border border-zinc-200 bg-white px-4 font-mono text-base font-black text-zinc-900 outline-none transition focus:border-zinc-950 focus:ring-4 focus:ring-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-white"
+              >
+                {FONT_SIZES.map((size) => (
+                  <option key={size} value={size}>
+                    {size}px
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="grid gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
+              Font
+              <select
+                value={fontFamily}
+                onChange={(event) => setFontFamily(event.target.value)}
+                className="h-12 rounded-2xl border border-zinc-200 bg-white px-4 font-mono text-base font-black text-zinc-900 outline-none transition focus:border-zinc-950 focus:ring-4 focus:ring-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-white"
+              >
+                {FONT_FAMILIES.map((font) => (
+                  <option key={font.value} value={font.value}>
+                    {font.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid grid-cols-[1fr_auto] gap-3">
+            <button
+              type="button"
+              onClick={() => setIsMarkdown((value) => !value)}
+              aria-pressed={isMarkdown}
+              className={`inline-flex h-12 items-center justify-center gap-2 rounded-2xl px-4 text-xs font-black uppercase tracking-widest transition ${
+                isMarkdown
+                  ? "bg-zinc-950 text-white shadow-md dark:bg-white dark:text-zinc-950"
+                  : "bg-white/60 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+              }`}
+            >
+              <FileText size={15} />
+              Markdown
+            </button>
+            <Button
+              size="sm"
+              icon={isPreview ? Edit3 : Eye}
+              variant={isPreview ? "primary" : "secondary"}
+              onClick={() => setIsPreview((value) => !value)}
+              disabled={!isMarkdown}
+              className="h-12 px-4"
+            >
+              {isPreview ? "Edit" : "Preview"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card className="p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+              Tools
+            </p>
+            <h2 className="mt-1 text-lg font-black italic tracking-tight text-zinc-900 dark:text-zinc-50">
+              Find & Replace
+            </h2>
+          </div>
+          <Button
+            size="sm"
+            icon={Search}
+            variant="secondary"
+            onClick={() => setShowSearchReplace((value) => !value)}
+          >
+            {showSearchReplace ? "Hide" : "Show"}
+          </Button>
+        </div>
+
+        {showSearchReplace && (
+          <div className="mt-4 space-y-3">
+            <Input
+              label="Find"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search text..."
+            />
+            <Input
+              label="Replace"
+              value={replaceTerm}
+              onChange={(event) => setReplaceTerm(event.target.value)}
+              placeholder="Replace with..."
+            />
+
+            <div className="grid grid-cols-2 gap-2 rounded-2xl bg-white/60 p-1 dark:bg-zinc-900">
+              <button
+                type="button"
+                onClick={() => setCaseSensitive((value) => !value)}
+                aria-pressed={caseSensitive}
+                className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition ${
+                  caseSensitive
+                    ? "bg-white text-zinc-950 shadow-sm dark:bg-white/60"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+                }`}
+              >
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    caseSensitive ? "bg-emerald-500" : "bg-zinc-400"
+                  }`}
+                />
+                Match Case
+              </button>
+              <button
+                type="button"
+                onClick={() => setWholeWord((value) => !value)}
+                aria-pressed={wholeWord}
+                className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition ${
+                  wholeWord
+                    ? "bg-white text-zinc-950 shadow-sm dark:bg-white/60"
+                    : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
+                }`}
+              >
+                <span
+                  className={`h-2.5 w-2.5 rounded-full ${
+                    wholeWord ? "bg-emerald-500" : "bg-zinc-400"
+                  }`}
+                />
+                Whole Word
+              </button>
+            </div>
+
+            <div className="rounded-xl bg-white px-3 py-2 font-mono text-xs text-zinc-500 dark:bg-zinc-950/60 dark:text-zinc-400">
+              {matches.length
+                ? `${currentMatch + 1} of ${matches.length} matches`
+                : searchTerm
+                  ? "No matches"
+                  : "Enter text to search"}
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button size="sm" onClick={findPrevious} disabled={!matches.length}>
+                Previous
+              </Button>
+              <Button size="sm" onClick={findNext} disabled={!matches.length}>
+                Next
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                size="sm"
+                icon={ReplaceIcon}
+                variant="secondary"
+                onClick={replaceCurrent}
+                disabled={!matches.length}
+              >
+                Replace
+              </Button>
+              <Button
+                size="sm"
+                icon={ReplaceIcon}
+                variant="secondary"
+                onClick={replaceAll}
+                disabled={!matches.length}
+              >
+                All
+              </Button>
+            </div>
+          </div>
+        )}
+      </Card>
+
+      <Card className="p-5">
+        <div className="space-y-3">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.md,.markdown"
+            className="hidden"
+            onChange={loadFile}
+          />
+          <Button
+            icon={Upload}
+            variant="secondary"
+            className="w-full"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Load File
+          </Button>
+          <Button icon={Download} className="w-full" onClick={saveFile}>
+            Save File
+          </Button>
+        </div>
+      </Card>
+    </>
+  );
+
   return (
     <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:min-h-[calc(100vh-5.5rem)] lg:grid-cols-[22em_minmax(0,1fr)]">
       <aside
@@ -346,225 +602,19 @@ export default function WritingPanel() {
           );
         }}
       >
-        <Card className="p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
-                Writing Studio
-              </p>
-              <p className="mt-1 font-mono text-xs font-bold text-zinc-900 dark:text-zinc-100">
-                {wordCount} words / {content.length} chars
-              </p>
-            </div>
-            <Button size="sm" icon={RotateCcw} variant="secondary" onClick={resetDocument}>
-              Reset
-            </Button>
-          </div>
-
-          <div className="mt-4 space-y-3">
-            <Input
-              label="File Name"
-              value={fileName}
-              onChange={(event) => setFileName(event.target.value)}
-              placeholder="document.md"
-            />
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="grid gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                Font Size
-                <select
-                  value={fontSize}
-                  onChange={(event) => setFontSize(Number(event.target.value))}
-                  className="h-12 rounded-2xl border border-zinc-200 bg-white px-4 font-mono text-base font-black text-zinc-900 outline-none transition focus:border-zinc-950 focus:ring-4 focus:ring-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-white"
-                >
-                  {FONT_SIZES.map((size) => (
-                    <option key={size} value={size}>
-                      {size}px
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="grid gap-2 text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                Font
-                <select
-                  value={fontFamily}
-                  onChange={(event) => setFontFamily(event.target.value)}
-                  className="h-12 rounded-2xl border border-zinc-200 bg-white px-4 font-mono text-base font-black text-zinc-900 outline-none transition focus:border-zinc-950 focus:ring-4 focus:ring-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-white"
-                >
-                  {FONT_FAMILIES.map((font) => (
-                    <option key={font.value} value={font.value}>
-                      {font.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div className="grid grid-cols-[1fr_auto] gap-3">
-              <button
-                type="button"
-                onClick={() => setIsMarkdown((value) => !value)}
-                aria-pressed={isMarkdown}
-                className={`inline-flex h-12 items-center justify-center gap-2 rounded-2xl px-4 text-xs font-black uppercase tracking-widest transition ${
-                  isMarkdown
-                    ? "bg-zinc-950 text-white shadow-md dark:bg-white dark:text-zinc-950"
-                    : "bg-white/60 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
-                }`}
-              >
-                <FileText size={15} />
-                Markdown
-              </button>
-              <Button
-                size="sm"
-                icon={isPreview ? Edit3 : Eye}
-                variant={isPreview ? "primary" : "secondary"}
-                onClick={() => setIsPreview((value) => !value)}
-                disabled={!isMarkdown}
-                className="h-12 px-4"
-              >
-                {isPreview ? "Edit" : "Preview"}
-              </Button>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="p-5">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-                Tools
-              </p>
-              <h2 className="mt-1 text-lg font-black italic tracking-tight text-zinc-900 dark:text-zinc-50">
-                Find & Replace
-              </h2>
-            </div>
-            <Button
-              size="sm"
-              icon={Search}
-              variant="secondary"
-              onClick={() => setShowSearchReplace((value) => !value)}
-            >
-              {showSearchReplace ? "Hide" : "Show"}
-            </Button>
-          </div>
-
-          {showSearchReplace && (
-            <div className="mt-4 space-y-3">
-              <Input
-                label="Find"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Search text..."
-              />
-              <Input
-                label="Replace"
-                value={replaceTerm}
-                onChange={(event) => setReplaceTerm(event.target.value)}
-                placeholder="Replace with..."
-              />
-
-              <div className="grid grid-cols-2 gap-2 rounded-2xl bg-white/60 p-1 dark:bg-zinc-900">
-                <button
-                  type="button"
-                  onClick={() => setCaseSensitive((value) => !value)}
-                  aria-pressed={caseSensitive}
-                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition ${
-                    caseSensitive
-                      ? "bg-white text-zinc-950 shadow-sm dark:bg-white/60"
-                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
-                  }`}
-                >
-                  <span
-                    className={`h-2.5 w-2.5 rounded-full ${
-                      caseSensitive ? "bg-emerald-500" : "bg-zinc-400"
-                    }`}
-                  />
-                  Match Case
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setWholeWord((value) => !value)}
-                  aria-pressed={wholeWord}
-                  className={`inline-flex h-11 items-center justify-center gap-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition ${
-                    wholeWord
-                      ? "bg-white text-zinc-950 shadow-sm dark:bg-white/60"
-                      : "text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white"
-                  }`}
-                >
-                  <span
-                    className={`h-2.5 w-2.5 rounded-full ${
-                      wholeWord ? "bg-emerald-500" : "bg-zinc-400"
-                    }`}
-                  />
-                  Whole Word
-                </button>
-              </div>
-
-              <div className="rounded-xl bg-white px-3 py-2 font-mono text-xs text-zinc-500 dark:bg-zinc-950/60 dark:text-zinc-400">
-                {matches.length
-                  ? `${currentMatch + 1} of ${matches.length} matches`
-                  : searchTerm
-                    ? "No matches"
-                    : "Enter text to search"}
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button size="sm" onClick={findPrevious} disabled={!matches.length}>
-                  Previous
-                </Button>
-                <Button size="sm" onClick={findNext} disabled={!matches.length}>
-                  Next
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  size="sm"
-                  icon={ReplaceIcon}
-                  variant="secondary"
-                  onClick={replaceCurrent}
-                  disabled={!matches.length}
-                >
-                  Replace
-                </Button>
-                <Button
-                  size="sm"
-                  icon={ReplaceIcon}
-                  variant="secondary"
-                  onClick={replaceAll}
-                  disabled={!matches.length}
-                >
-                  All
-                </Button>
-              </div>
-            </div>
-          )}
-        </Card>
-
-        <Card className="p-5">
-          <div className="space-y-3">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".txt,.md,.markdown"
-              className="hidden"
-              onChange={loadFile}
-            />
-            <Button
-              icon={Upload}
-              variant="secondary"
-              className="w-full"
-              onClick={() => fileInputRef.current?.click()}
-            >
-              Load File
-            </Button>
-            <Button icon={Download} className="w-full" onClick={saveFile}>
-              Save File
-            </Button>
-          </div>
-        </Card>
+        {renderControlPanel()}
       </aside>
+
+      <FloatingToolPanel
+        storageKey="contentflow-write-floating-panel"
+        title="Writing Tools"
+        eyebrow="Write"
+        open={isControlPanelOpen}
+        onClose={() => setIsControlPanelOpen(false)}
+        defaultSize={{ width: 340, height: 520 }}
+      >
+        {renderControlPanel()}
+      </FloatingToolPanel>
 
       <section className="panel-enter-main lg:sticky lg:top-24 lg:h-[calc(100vh-7.5rem)]">
         <Card className="overflow-hidden lg:flex lg:h-full lg:flex-col">
@@ -655,6 +705,10 @@ export default function WritingPanel() {
                 <Type size={13} />
                 {isPreview ? "Preview" : "Editor"}
               </div>
+              <PanelPopupButton
+                label="Panel"
+                onClick={() => setIsControlPanelOpen(true)}
+              />
             </div>
           </div>
 

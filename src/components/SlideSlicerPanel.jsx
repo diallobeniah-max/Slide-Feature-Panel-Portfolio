@@ -10,6 +10,8 @@ import {
   Trash2,
   X,
   Sparkles,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import JSZip from "jszip";
 import { downloadBlob } from "../utils/media.js";
@@ -38,6 +40,7 @@ export default function SlideSlicerPanel() {
     message: "Import an image to begin slicing.",
   });
   const [expandedSlice, setExpandedSlice] = useState(null);
+  const [expandedZoom, setExpandedZoom] = useState(1);
   const [customPresets, setCustomPresets] = useState(() => {
     const saved = localStorage.getItem("studio_custom_presets_v2");
     return saved ? JSON.parse(saved) : INITIAL_CUSTOM_PRESETS;
@@ -60,7 +63,15 @@ export default function SlideSlicerPanel() {
 
   function importImage(event) {
     const file = event.target.files?.[0];
+    loadSourceFile(file);
+  }
+
+  function loadSourceFile(file) {
     if (!file) return;
+    if (!file.type?.startsWith("image/")) {
+      setStatus({ type: "idle", message: "Drop a PNG, JPG, WEBP, or other image file." });
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = (readerEvent) => {
@@ -192,8 +203,13 @@ export default function SlideSlicerPanel() {
   }
 
   function selectPreset(preset) {
-    setSlideWidth(preset.w);
-    setSlideHeight(preset.h);
+    const width = Math.max(1, Number(preset.w) || 1080);
+    const height = Math.max(1, Number(preset.h) || 1080);
+    setSlideWidth(width);
+    setSlideHeight(height);
+    setPresetDraft((draft) => ({ ...draft, w: width, h: height }));
+    setStatus({ type: "success", message: `${preset.name} preset applied: ${width}x${height}px.` });
+    setActiveTab("slicer");
   }
 
   function resetSlicer() {
@@ -224,27 +240,29 @@ export default function SlideSlicerPanel() {
     <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[24em_1fr]">
       <aside className="grid content-start gap-5">
         <Card className="p-0 overflow-hidden flex flex-col">
-          <div className="flex bg-zinc-100/50 dark:bg-zinc-900/50 border-b border-zinc-200 dark:border-zinc-800 p-1.5 gap-1.5">
-            <button
-              onClick={() => setActiveTab("slicer")}
-              className={`flex-1 text-xs py-2 rounded-lg font-bold uppercase tracking-widest transition-all ${
-                activeTab === "slicer"
-                  ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-              }`}
-            >
-              Slide Slicer
-            </button>
-            <button
-              onClick={() => setActiveTab("presets")}
-              className={`flex-1 text-xs py-2 rounded-lg font-bold uppercase tracking-widest transition-all ${
-                activeTab === "presets"
-                  ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm"
-                  : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-              }`}
-            >
-              Presets
-            </button>
+          <div className="p-2 border-b border-zinc-200 dark:border-zinc-800/50 bg-zinc-50 dark:bg-zinc-950/20">
+            <div className="flex bg-zinc-100 dark:bg-zinc-800/50 p-1 rounded-[14px] gap-1">
+              <button
+                onClick={() => setActiveTab("slicer")}
+                className={`flex-1 text-[10px] py-2.5 rounded-[10px] font-black uppercase tracking-[0.12em] transition-all duration-300 ${
+                  activeTab === "slicer"
+                    ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50 shadow-[0_4px_12px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.3)] scale-[1.02]"
+                    : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                }`}
+              >
+                Slide Slicer
+              </button>
+              <button
+                onClick={() => setActiveTab("presets")}
+                className={`flex-1 text-[10px] py-2.5 rounded-[10px] font-black uppercase tracking-[0.12em] transition-all duration-300 ${
+                  activeTab === "presets"
+                    ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50 shadow-[0_4px_12px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.3)] scale-[1.02]"
+                    : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                }`}
+              >
+                Presets
+              </button>
+            </div>
           </div>
 
           <div className="p-5">
@@ -312,6 +330,7 @@ export default function SlideSlicerPanel() {
                 <div className="grid grid-cols-2 gap-3">
                   {customPresets.map((preset) => (
                     <button
+                      type="button"
                       key={preset.id}
                       onClick={() => selectPreset(preset)}
                       className={`rounded-2xl border p-3 text-left transition ${
@@ -346,6 +365,7 @@ export default function SlideSlicerPanel() {
                       <div className="grid grid-cols-2 gap-3">
                         {group.items.map((preset) => (
                           <button
+                            type="button"
                             key={`${group.category}-${preset.name}`}
                             onClick={() => selectPreset(preset)}
                             className={`rounded-2xl border p-3 text-left transition ${
@@ -508,7 +528,7 @@ export default function SlideSlicerPanel() {
 
       <section className="grid content-start gap-5">
         <Card
-          className={`grid aspect-video place-items-center overflow-hidden bg-white/60 dark:bg-zinc-950/50 border-zinc-200 dark:border-zinc-800 group ${
+          className={`grid aspect-video place-items-center overflow-hidden border-zinc-800 bg-zinc-950 group ${
             sourceImage
               ? "cursor-grab active:cursor-grabbing"
               : "dropzone-interactive cursor-pointer"
@@ -517,13 +537,18 @@ export default function SlideSlicerPanel() {
           onMouseMove={moveDrag}
           onMouseUp={() => setIsDragging(false)}
           onMouseLeave={() => setIsDragging(false)}
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            loadSourceFile(event.dataTransfer.files?.[0]);
+          }}
           onClick={
             !sourceImage ? () => fileInputRef.current?.click() : undefined
           }
         >
           {sourceImage ? (
             <div
-              className="relative transition-transform duration-75"
+              className="group/preview relative flex h-full w-full items-center justify-center overflow-hidden bg-black p-4 transition-transform duration-75"
               style={{
                 transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
               }}
@@ -532,7 +557,7 @@ export default function SlideSlicerPanel() {
                 src={sourceImage}
                 alt="Source"
                 draggable="false"
-                className="max-h-[34em] select-none rounded-2xl border border-zinc-200 bg-white object-contain shadow-sm dark:border-zinc-800"
+                className="max-h-[34em] max-w-full select-none rounded-2xl bg-black object-contain shadow-2xl"
               />
               <div
                 className={`pointer-events-none absolute inset-0 flex ${
@@ -547,6 +572,9 @@ export default function SlideSlicerPanel() {
                     Slide {index + 1}
                   </div>
                 ))}
+              </div>
+              <div className="pointer-events-none absolute bottom-5 left-1/2 z-20 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-center text-xs font-black uppercase tracking-widest text-white opacity-0 shadow-2xl backdrop-blur-md transition duration-200 group-hover/preview:opacity-100">
+                {slideWidth} x {slideHeight}
               </div>
             </div>
           ) : (
@@ -591,16 +619,25 @@ export default function SlideSlicerPanel() {
               {generatedSlices.map((slice, index) => (
                 <button
                   key={slice}
-                  onClick={() => setExpandedSlice({ src: slice, index })}
-                  className="group relative aspect-square overflow-hidden rounded-2xl border border-zinc-200 bg-white text-left shadow-sm card-interactive dark:border-zinc-800 dark:bg-zinc-900"
+                  onClick={() => {
+                    setExpandedZoom(1);
+                    setExpandedSlice({ src: slice, index });
+                  }}
+                  className="group relative aspect-square overflow-hidden rounded-[18px] border border-zinc-200 bg-zinc-100 text-left shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-zinc-400 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-600"
                 >
                   <img
                     src={slice}
                     alt={`Slide ${index + 1}`}
-                    className="h-full w-full object-cover transition-transform duration-500 ease-out group-hover:scale-105"
+                    loading="lazy"
+                    className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.035]"
                   />
-                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10 text-[10px] font-black uppercase tracking-widest text-white opacity-0 transition group-hover:opacity-100">
-                    Tap to expand
+                  <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/30 to-transparent p-3 text-white opacity-0 transition group-hover:opacity-100">
+                    <span className="block truncate text-xs font-black">
+                      Slide {index + 1}
+                    </span>
+                    <span className="mt-1 block text-[10px] font-medium text-white/75">
+                      {slideWidth} x {slideHeight}
+                    </span>
                   </span>
                   <span
                     onClick={(event) => {
@@ -625,39 +662,166 @@ export default function SlideSlicerPanel() {
 
       {expandedSlice && (
         <div
-          className="fixed inset-0 z-50 grid place-items-center bg-zinc-950/80 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden p-4 sm:p-8"
           onClick={() => setExpandedSlice(null)}
         >
+          <div className="absolute inset-0 bg-zinc-950/85 backdrop-blur-xl" />
           <div
-            className="grid max-h-[92vh] w-full max-w-6xl grid-rows-[auto_1fr] gap-4 rounded-3xl border border-zinc-800 bg-zinc-950 p-5 shadow-2xl"
+            className="relative flex h-[min(90vh,860px)] w-full max-w-6xl flex-col overflow-hidden rounded-[32px] border border-zinc-800 bg-zinc-900 text-white shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="flex items-center justify-between gap-4">
-              <div>
+            <div className="flex shrink-0 items-center justify-between gap-4 border-b border-zinc-800 bg-zinc-900 px-5 py-4 sm:px-8">
+              <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">
-                  Generated Slide Preview
+                  Expanded Preview
                 </p>
-                <h3 className="mt-1 text-xl font-black tracking-tight text-white">
+                <h3 className="mt-1 truncate text-base font-black tracking-tight text-zinc-50">
                   Slide {expandedSlice.index + 1}
                 </h3>
+                <p className="mt-1 truncate text-[11px] font-semibold text-zinc-500">
+                  {prefix}_Slide_{String(expandedSlice.index + 1).padStart(2, "0")}.png
+                </p>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="bg-zinc-900 hover:bg-zinc-800 text-white hover:text-white"
-                onClick={() => setExpandedSlice(null)}
-                aria-label="Close expanded slide"
-              >
-                <X size={20} {...iconProps} />
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  icon={ZoomOut}
+                  size="icon"
+                  variant="secondary"
+                  onClick={() => setExpandedZoom((value) => Math.max(0.5, Number((value - 0.25).toFixed(2))))}
+                  aria-label="Zoom out"
+                  title="Zoom out"
+                />
+                <span className="inline-flex items-center rounded-lg border border-zinc-700 bg-zinc-800 px-2.5 py-1 text-[9px] font-black uppercase tracking-widest text-zinc-300">
+                  {Math.round(expandedZoom * 100)}%
+                </span>
+                <Button
+                  icon={ZoomIn}
+                  size="icon"
+                  variant="secondary"
+                  onClick={() => setExpandedZoom((value) => Math.min(3, Number((value + 0.25).toFixed(2))))}
+                  aria-label="Zoom in"
+                  title="Zoom in"
+                />
+                <Button
+                  icon={X}
+                  size="icon"
+                  variant="secondary"
+                  onClick={() => setExpandedSlice(null)}
+                  aria-label="Close preview"
+                  title="Close preview"
+                />
+              </div>
             </div>
-            <div className="grid min-h-0 place-items-center overflow-auto rounded-2xl bg-black">
-              <img
-                src={expandedSlice.src}
-                alt={`Expanded slide ${expandedSlice.index + 1}`}
-                className="max-h-full max-w-full object-contain"
-              />
+
+            <div className="grid min-h-0 flex-1 bg-zinc-950 lg:grid-cols-[minmax(0,1fr)_22rem]">
+              <div className="group/preview relative flex min-h-0 items-center justify-center overflow-hidden bg-black p-4">
+                {generatedSlices.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      disabled={expandedSlice.index <= 0}
+                      onClick={() => {
+                        const nextIndex = Math.max(0, expandedSlice.index - 1);
+                        setExpandedZoom(1);
+                        setExpandedSlice({ src: generatedSlices[nextIndex], index: nextIndex });
+                      }}
+                      className="absolute left-4 top-1/2 z-10 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-2xl bg-white/90 text-zinc-950 shadow-xl transition hover:bg-white disabled:opacity-25"
+                      aria-label="Previous slice"
+                      title="Previous slice"
+                    >
+                      <span className="text-2xl leading-none">‹</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={expandedSlice.index >= generatedSlices.length - 1}
+                      onClick={() => {
+                        const nextIndex = Math.min(generatedSlices.length - 1, expandedSlice.index + 1);
+                        setExpandedZoom(1);
+                        setExpandedSlice({ src: generatedSlices[nextIndex], index: nextIndex });
+                      }}
+                      className="absolute right-4 top-1/2 z-10 grid h-12 w-12 -translate-y-1/2 place-items-center rounded-2xl bg-white/90 text-zinc-950 shadow-xl transition hover:bg-white disabled:opacity-25"
+                      aria-label="Next slice"
+                      title="Next slice"
+                    >
+                      <span className="text-2xl leading-none">›</span>
+                    </button>
+                  </>
+                )}
+                <img
+                  src={expandedSlice.src}
+                  alt={`Expanded slide ${expandedSlice.index + 1}`}
+                  style={{ transform: `scale(${expandedZoom})` }}
+                  className="max-h-full max-w-full select-none rounded-2xl object-contain shadow-2xl"
+                />
+                <div className="pointer-events-none absolute bottom-5 left-1/2 z-20 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-center text-xs font-black uppercase tracking-widest text-white opacity-0 shadow-2xl backdrop-blur-md transition duration-200 group-hover/preview:opacity-100">
+                  {slideWidth} x {slideHeight}
+                </div>
+              </div>
+
+              <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-t border-zinc-800 bg-zinc-900 p-5 lg:border-l lg:border-t-0">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                    Media Details
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="rounded-2xl bg-zinc-950/70 p-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">Size</p>
+                      <p className="mt-1 font-mono text-sm font-black text-zinc-100">
+                        {slideWidth} x {slideHeight}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl bg-zinc-950/70 p-3">
+                      <p className="text-[9px] font-black uppercase tracking-widest text-zinc-500">File</p>
+                      <p className="mt-1 font-mono text-sm font-black uppercase text-zinc-100">PNG</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 rounded-3xl border border-zinc-800 bg-zinc-950/50 p-4">
+                  <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+                    Slice Info
+                  </p>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-600">Output</p>
+                    <p className="mt-1 break-words text-sm font-semibold text-zinc-200">
+                      {prefix}_Slide_{String(expandedSlice.index + 1).padStart(2, "0")}.png
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[9px] font-black uppercase tracking-widest text-zinc-600">Position</p>
+                    <p className="mt-1 text-sm font-semibold text-zinc-200">
+                      {expandedSlice.index + 1} of {generatedSlices.length}
+                    </p>
+                  </div>
+                </div>
+              </aside>
             </div>
+
+            {generatedSlices.length > 1 && (
+              <div className="shrink-0 border-t border-zinc-800 bg-zinc-900 p-4">
+                <div className="flex gap-3 overflow-x-auto pb-1">
+                  {generatedSlices.map((slice, index) => (
+                    <button
+                      key={`${slice}-${index}`}
+                      type="button"
+                      onClick={() => {
+                        setExpandedZoom(1);
+                        setExpandedSlice({ src: slice, index });
+                      }}
+                      className={`relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border-2 bg-zinc-950 transition ${
+                        expandedSlice.index === index
+                          ? "border-white shadow-lg"
+                          : "border-transparent opacity-65 hover:opacity-100"
+                      }`}
+                      aria-label={`View slide ${index + 1}`}
+                      title={`Slide ${index + 1}`}
+                    >
+                      <img src={slice} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

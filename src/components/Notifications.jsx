@@ -1,5 +1,5 @@
 import React, { useEffect } from "react";
-import { CheckCircle2, AlertCircle, Info, X } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Info, X } from "lucide-react";
 
 /* ── Chime generator (Web Audio API, no file needed) ─────────────── */
 export function playChime(type = "success") {
@@ -33,13 +33,15 @@ export function playChime(type = "success") {
 /* ── Single toast card ─────────────────────────────────────────────── */
 const ICONS = {
   success: <CheckCircle2 size={18} className="text-emerald-400 shrink-0" strokeWidth={2} />,
-  error:   <AlertCircle  size={18} className="text-rose-400 shrink-0"    strokeWidth={2} />,
+  error:   <AlertTriangle size={18} className="text-amber-300 shrink-0" strokeWidth={2} />,
+  warning: <AlertTriangle size={18} className="text-amber-300 shrink-0" strokeWidth={2} />,
   info:    <Info         size={18} className="text-sky-400 shrink-0"     strokeWidth={2} />,
 };
 
 const BORDERS = {
   success: "border-emerald-500/30",
-  error:   "border-rose-500/30",
+  error:   "border-amber-400/35",
+  warning: "border-amber-400/35",
   info:    "border-sky-500/30",
 };
 

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback, useMemo } from "react";
+import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import JSZip from "jszip";
 import {
   Upload,
@@ -26,6 +26,18 @@ import {
   ThumbsUp,
 } from "lucide-react";
 import { Card, Button, Badge, RangeSlider, Input } from "./ui";
+import FloatingToolPanel from "./ui/FloatingToolPanel.jsx";
+import PanelPopupButton from "./ui/PanelPopupButton.jsx";
+
+const BATCH_STATE_KEY = "contentflow-batch-state-v1";
+
+function loadBatchState() {
+  try {
+    return JSON.parse(localStorage.getItem(BATCH_STATE_KEY) || "{}");
+  } catch {
+    return {};
+  }
+}
 
 // --- Utilities ---
 const formatSize = (bytes) => {
@@ -96,15 +108,16 @@ function encodeWAV(audioBuffer) {
 
 // --- Main Panel ---
 export default function BatchStudioPanel() {
+  const savedBatchState = useMemo(loadBatchState, []);
   // Asset Management
   const [files, setFiles] = useState([]);
   const [processedFiles, setProcessedFiles] = useState([]);
 
   // Processing Config
-  const [quality, setQuality] = useState(1.0);
-  const [targetImgFormat, setTargetImgFormat] = useState("image/jpeg");
-  const [targetVidFormat, setTargetVidFormat] = useState("video/mp4");
-  const [vidOutputMode, setVidOutputMode] = useState("video");
+  const [quality, setQuality] = useState(savedBatchState.quality || 1.0);
+  const [targetImgFormat, setTargetImgFormat] = useState(savedBatchState.targetImgFormat || "image/jpeg");
+  const [targetVidFormat, setTargetVidFormat] = useState(savedBatchState.targetVidFormat || "video/mp4");
+  const [vidOutputMode, setVidOutputMode] = useState(savedBatchState.vidOutputMode || "video");
   const [isProcessing, setIsProcessing] = useState(false);
 
   // UI & View States
@@ -116,6 +129,7 @@ export default function BatchStudioPanel() {
   const [isFauxFullscreen, setIsFauxFullscreen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState({ show: false, progress: 0, complete: false });
+  const [isControlPanelOpen, setIsControlPanelOpen] = useState(false);
 
   // Interaction Refs
   const [zoomPan, setZoomPan] = useState({ x: 0, y: 0 });
@@ -132,6 +146,14 @@ export default function BatchStudioPanel() {
     if (quality < 0.7) return 0.75;
     return 1.0;
   }, [quality]);
+
+  useEffect(() => {
+    localStorage.setItem(
+      BATCH_STATE_KEY,
+      JSON.stringify({ quality, targetImgFormat, targetVidFormat, vidOutputMode }),
+    );
+    window.contentFlow?.appState?.setUnsaved?.(Boolean(files.length || isProcessing), "batch");
+  }, [files.length, isProcessing, quality, targetImgFormat, targetVidFormat, vidOutputMode]);
 
   // File handling
   const processNewFiles = (uploadedFiles) => {
@@ -562,6 +584,164 @@ export default function BatchStudioPanel() {
   const currentResult = processedFiles.find((p) => p.id === previewId);
   const currentTrimmingItem = files.find((f) => f.id === trimmingId);
 
+  const renderControlPanel = () => (
+    <>
+      <Card className="p-6 flex flex-col gap-6">
+        <div>
+          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
+            Batch Studio
+          </p>
+          <h2 className="mt-1 text-2xl font-black italic tracking-tight text-zinc-900 dark:text-zinc-50">
+            Batch Process Assets
+          </h2>
+        </div>
+        <div className="flex items-center gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-4 text-zinc-500">
+          <Zap size={16} />
+          <h3 className="font-bold text-[10px] uppercase tracking-widest">
+            Engine Config
+          </h3>
+        </div>
+
+        <div className="space-y-4">
+          <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
+            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-3 text-center">
+              Image Format
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {["jpeg", "png", "webp"].map((fmt) => (
+                <Button
+                  key={fmt}
+                  variant={
+                    targetImgFormat === `image/${fmt}` ? "primary" : "outline"
+                  }
+                  size="sm"
+                  onClick={() => setTargetImgFormat(`image/${fmt}`)}
+                >
+                  {fmt}
+                </Button>
+              ))}
+            </div>
+          </Card>
+
+          <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
+            <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-3 text-center">
+              Export Mode
+            </label>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              <Button
+                variant={vidOutputMode === "video" ? "primary" : "outline"}
+                size="sm"
+                onClick={() => setVidOutputMode("video")}
+              >
+                Video
+              </Button>
+              <Button
+                variant={vidOutputMode === "audio" ? "primary" : "outline"}
+                size="sm"
+                onClick={() => setVidOutputMode("audio")}
+              >
+                Audio
+              </Button>
+            </div>
+            {vidOutputMode === "video" ? (
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                {["mp4", "webm"].map((fmt) => (
+                  <Button
+                    key={fmt}
+                    variant={
+                      targetVidFormat === `video/${fmt}`
+                        ? "primary"
+                        : "secondary"
+                    }
+                    size="sm"
+                    onClick={() => setTargetVidFormat(`video/${fmt}`)}
+                  >
+                    {fmt}
+                  </Button>
+                ))}
+              </div>
+            ) : (
+              <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-full disabled"
+                  disabled
+                >
+                  Lossless MP3
+                </Button>
+              </div>
+            )}
+          </Card>
+
+          <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
+            <RangeSlider
+              label="Engine Intensity"
+              valueLabel={`${Math.round(quality * 100)}%`}
+              min="0.05"
+              max="1"
+              step="0.01"
+              value={quality}
+              onChange={(e) => setQuality(parseFloat(e.target.value))}
+            />
+            <div className="mt-5 pt-4 border-t border-zinc-200 dark:border-zinc-700 flex justify-between items-center text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+              <span>Processing Scale</span>
+              <span className="text-zinc-900 dark:text-zinc-100 font-mono">
+                {Math.round(autoScale * 100)}%
+              </span>
+            </div>
+          </Card>
+
+          <div className="pt-2">
+            <Button
+              variant="primary"
+              size="lg"
+              className="w-full"
+              disabled={files.length === 0 || isProcessing}
+              onClick={processMedia}
+              icon={isProcessing ? Loader2 : Zap}
+            >
+              {isProcessing ? "Processing..." : "Start Session"}
+            </Button>
+          </div>
+        </div>
+      </Card>
+
+      {processedFiles.length > 0 && !isProcessing && (
+        <Card className="p-5 flex flex-col gap-4 bg-white dark:bg-zinc-800/50">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-white dark:bg-zinc-700 rounded-full flex items-center justify-center text-zinc-900 dark:text-white shadow-sm border border-zinc-200 dark:border-zinc-600">
+                <Check size={20} />
+              </div>
+              <div className="flex flex-col">
+                <span className="text-xs font-bold uppercase tracking-widest text-zinc-900 dark:text-zinc-100">
+                  Ready
+                </span>
+                <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-widest">
+                  {processedFiles.length} Objects
+                </span>
+              </div>
+            </div>
+            <Button variant="secondary" size="icon" onClick={downloadZip}>
+              <FileArchive size={20} />
+            </Button>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              className="flex-1"
+              onClick={downloadZip}
+            >
+              Download All (ZIP)
+            </Button>
+          </div>
+        </Card>
+      )}
+    </>
+  );
+
   return (
     <main className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[22em_1fr] items-start">
       {/* Download Progress Notification */}
@@ -595,165 +775,19 @@ export default function BatchStudioPanel() {
       )}
       {/* Left: Config Panel */}
       <aside className="grid content-start gap-5 panel-enter-aside">
-        <Card className="p-6 flex flex-col gap-6">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">
-              Batch Studio
-            </p>
-            <h2 className="mt-1 text-2xl font-black italic tracking-tight text-zinc-900 dark:text-zinc-50">
-              Batch Process Assets
-            </h2>
-          </div>
-          <div className="flex items-center gap-3 border-b border-zinc-100 dark:border-zinc-800 pb-4 text-zinc-500">
-            <Zap size={16} />
-            <h3 className="font-bold text-[10px] uppercase tracking-widest">
-              Engine Config
-            </h3>
-          </div>
-
-          <div className="space-y-4">
-            {/* Image Format */}
-            <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-3 text-center">
-                Image Format
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {["jpeg", "png", "webp"].map((fmt) => (
-                  <Button
-                    key={fmt}
-                    variant={
-                      targetImgFormat === `image/${fmt}` ? "primary" : "outline"
-                    }
-                    size="sm"
-                    onClick={() => setTargetImgFormat(`image/${fmt}`)}
-                  >
-                    {fmt}
-                  </Button>
-                ))}
-              </div>
-            </Card>
-
-            {/* Export Mode */}
-            <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
-              <label className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-3 text-center">
-                Export Mode
-              </label>
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                <Button
-                  variant={vidOutputMode === "video" ? "primary" : "outline"}
-                  size="sm"
-                  onClick={() => setVidOutputMode("video")}
-                >
-                  Video
-                </Button>
-                <Button
-                  variant={vidOutputMode === "audio" ? "primary" : "outline"}
-                  size="sm"
-                  onClick={() => setVidOutputMode("audio")}
-                >
-                  Audio
-                </Button>
-              </div>
-              {vidOutputMode === "video" ? (
-                <div className="grid grid-cols-2 gap-2 pt-2 border-t border-zinc-200 dark:border-zinc-700">
-                  {["mp4", "webm"].map((fmt) => (
-                    <Button
-                      key={fmt}
-                      variant={
-                        targetVidFormat === `video/${fmt}`
-                          ? "primary"
-                          : "secondary"
-                      }
-                      size="sm"
-                      onClick={() => setTargetVidFormat(`video/${fmt}`)}
-                    >
-                      {fmt}
-                    </Button>
-                  ))}
-                </div>
-              ) : (
-                <div className="pt-2 border-t border-zinc-200 dark:border-zinc-700">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className="w-full disabled"
-                    disabled
-                  >
-                    Lossless MP3
-                  </Button>
-                </div>
-              )}
-            </Card>
-
-            {/* Quality Slider */}
-            <Card className="p-5 shadow-none border-zinc-100 dark:border-zinc-800 bg-white/50 dark:bg-zinc-800/30">
-              <RangeSlider
-                label="Engine Intensity"
-                valueLabel={`${Math.round(quality * 100)}%`}
-                min="0.05"
-                max="1"
-                step="0.01"
-                value={quality}
-                onChange={(e) => setQuality(parseFloat(e.target.value))}
-              />
-              <div className="mt-5 pt-4 border-t border-zinc-200 dark:border-zinc-700 flex justify-between items-center text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
-                <span>Processing Scale</span>
-                <span className="text-zinc-900 dark:text-zinc-100 font-mono">
-                  {Math.round(autoScale * 100)}%
-                </span>
-              </div>
-            </Card>
-
-            {/* Process Button */}
-            <div className="pt-2">
-              <Button
-                variant="primary"
-                size="lg"
-                className="w-full"
-                disabled={files.length === 0 || isProcessing}
-                onClick={processMedia}
-                icon={isProcessing ? Loader2 : Zap}
-              >
-                {isProcessing ? "Processing..." : "Start Session"}
-              </Button>
-            </div>
-          </div>
-        </Card>
-
-        {/* Download ZIP */}
-        {processedFiles.length > 0 && !isProcessing && (
-          <Card className="p-5 flex flex-col gap-4 bg-white dark:bg-zinc-800/50">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-white dark:bg-zinc-700 rounded-full flex items-center justify-center text-zinc-900 dark:text-white shadow-sm border border-zinc-200 dark:border-zinc-600">
-                  <Check size={20} />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs font-bold uppercase tracking-widest text-zinc-900 dark:text-zinc-100">
-                    Ready
-                  </span>
-                  <span className="text-[10px] text-zinc-500 font-medium uppercase tracking-widest">
-                    {processedFiles.length} Objects
-                  </span>
-                </div>
-              </div>
-              <Button variant="secondary" size="icon" onClick={downloadZip}>
-                <FileArchive size={20} />
-              </Button>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="primary"
-                size="sm"
-                className="flex-1"
-                onClick={downloadZip}
-              >
-                Download All (ZIP)
-              </Button>
-            </div>
-          </Card>
-        )}
+        {renderControlPanel()}
       </aside>
+
+      <FloatingToolPanel
+        storageKey="contentflow-batch-floating-panel"
+        title="Batch Controls"
+        eyebrow="Batch"
+        open={isControlPanelOpen}
+        onClose={() => setIsControlPanelOpen(false)}
+        defaultSize={{ width: 326, height: 500 }}
+      >
+        {renderControlPanel()}
+      </FloatingToolPanel>
 
       {/* Right: Queue */}
       <section className="grid content-start gap-5 panel-enter-main">
@@ -766,14 +800,20 @@ export default function BatchStudioPanel() {
               Task Queue <Badge variant="default">{files.length}</Badge>
             </h3>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => fileInputRef.current.click()}
-            icon={Plus}
-          >
-            Append Asset
-          </Button>
+          <div className="flex items-center gap-2">
+            <PanelPopupButton
+              label="Panel"
+              onClick={() => setIsControlPanelOpen(true)}
+            />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current.click()}
+              icon={Plus}
+            >
+              Append Asset
+            </Button>
+          </div>
         </div>
 
         {!files.length ? (

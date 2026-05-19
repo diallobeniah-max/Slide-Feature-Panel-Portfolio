@@ -1,6 +1,19 @@
 export const OCR_CHAR_WHITELIST =
   "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'\".,!?;:-()/#&@%$+*= ";
 
+const MAX_FAST_DIMENSION = 1500;
+const MAX_ACCURATE_DIMENSION = 2300;
+const MIN_SELECTED_DIMENSION = 900;
+
+let workerPromise = null;
+let workerInstance = null;
+let activeRunId = 0;
+let activeProgress = null;
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function cleanOcrWord(value) {
   return String(value || "")
     .replace(/[|]+/g, "I")
@@ -11,12 +24,12 @@ function cleanOcrWord(value) {
 }
 
 function isUsefulOcrWord(word) {
-  const compact = word.replace(/\s/g, "");
+  const compact = String(word || "").replace(/\s/g, "");
   if (!compact) return false;
   if (!/[A-Za-z0-9]/.test(compact)) return false;
   if (compact.length === 1 && !/[AIa0-9]/.test(compact)) return false;
   const useful = (compact.match(/[A-Za-z0-9]/g) || []).length;
-  return useful / compact.length >= 0.45;
+  return useful / compact.length >= 0.5;
 }
 
 function getWordBox(word) {
@@ -48,7 +61,7 @@ export function collectOcrWords(data) {
         for (const word of lineWords) {
           const text = cleanOcrWord(word?.text);
           const confidence = Number(word?.confidence || 0);
-          if (confidence < 12 || !isUsefulOcrWord(text)) continue;
+          if (confidence < 14 || !isUsefulOcrWord(text)) continue;
           words.push({ ...getWordBox(word), confidence, text });
         }
       }
@@ -65,7 +78,7 @@ export function arrangeOcrWords(data) {
   const rows = [];
   for (const word of sorted) {
     const row = rows.find((candidate) => {
-      const tolerance = Math.max(9, Math.min(candidate.height, word.height) * 0.8);
+      const tolerance = Math.max(8, Math.min(candidate.height, word.height) * 0.82);
       return Math.abs(candidate.centerY - word.centerY) <= tolerance;
     });
 
@@ -96,22 +109,6 @@ export function arrangeOcrWords(data) {
     .trim();
 }
 
-export function cleanOcrText(value) {
-  return String(value || "")
-    .split(/\r?\n/)
-    .map((line) =>
-      line
-        .replace(/[^\w'"#&@%$+/.,!?;:()=\-\s]/g, " ")
-        .replace(/\s+([,.!?;:])/g, "$1")
-        .replace(/\s+/g, " ")
-        .trim(),
-    )
-    .filter(shouldKeepOcrLine)
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-}
-
 export function getReadableOcrWords(value) {
   return String(value || "").match(/[A-Za-z0-9][A-Za-z0-9'"#&@%$/+.=:-]*/g) || [];
 }
@@ -128,6 +125,7 @@ export function getOcrLineStats(line) {
     words,
     longerWords,
     letters,
+    digits,
     usefulChars,
     compactLength: compact.length,
   };
@@ -136,13 +134,32 @@ export function getOcrLineStats(line) {
 export function shouldKeepOcrLine(line) {
   const stats = getOcrLineStats(line);
   if (!stats.compactLength) return false;
-  if (stats.usefulChars / stats.compactLength < 0.38) return false;
+  if (stats.usefulChars / stats.compactLength < 0.42) return false;
   if (stats.longerWords.length >= 2) return true;
   if (stats.longerWords.length === 1 && stats.letters >= 4) return true;
-  return stats.words.length >= 2 && stats.usefulChars >= 5;
+  return stats.words.length >= 2 && stats.usefulChars >= 6;
 }
 
-function wrapOcrText(value, maxLineLength = 42) {
+export function cleanOcrText(value) {
+  return String(value || "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .split(/\r?\n/)
+    .map((line) =>
+      line
+        .replace(/[^\w'"#&@%$+/.,!?;:()=\-\s]/g, " ")
+        .replace(/\b[A-Za-z]\b/g, (match) => (/[AIa]/.test(match) ? match : " "))
+        .replace(/\s+([,.!?;:])/g, "$1")
+        .replace(/[ \t]{2,}/g, " ")
+        .trim(),
+    )
+    .filter(shouldKeepOcrLine)
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function wrapOcrText(value, maxLineLength = 72) {
   return String(value || "")
     .split(/\r?\n/)
     .flatMap((line) => {
@@ -169,44 +186,28 @@ function wrapOcrText(value, maxLineLength = 42) {
     .trim();
 }
 
-export function normalizeOcrDisplayText(value, maxLineLength = 42) {
-  const rawLines = String(value || "")
-    .split(/\r?\n/)
-    .map((line) =>
-      line
-        .replace(/[^\w'"#&@%$+/.,!?;:()=\-\s]/g, " ")
-        .replace(/\s+([,.!?;:])/g, "$1")
-        .replace(/\s+/g, " ")
-        .trim(),
-    )
-    .filter(Boolean);
-  if (!rawLines.length) return "";
+export function normalizeOcrDisplayText(value, maxLineLength = 72) {
+  const cleaned = cleanOcrText(value);
+  if (!cleaned) return "";
 
-  const sourceLines = rawLines.filter(shouldKeepOcrLine);
-  if (!sourceLines.length) return "";
-
+  const lines = cleaned.split(/\r?\n/).filter(Boolean);
   const averageLineLength =
-    sourceLines.reduce((total, line) => total + line.length, 0) / sourceLines.length;
-  const tinyLineCount = sourceLines.filter((line) => {
+    lines.reduce((total, line) => total + line.length, 0) / lines.length;
+  const tinyLineCount = lines.filter((line) => {
     const stats = getOcrLineStats(line);
     return line.length < 8 || stats.longerWords.length === 0;
   }).length;
-  const shouldPreserveLineBreaks =
-    sourceLines.length >= 2 &&
-    averageLineLength >= Math.min(20, maxLineLength * 0.55) &&
-    tinyLineCount / sourceLines.length <= 0.35;
+  const preserveBreaks =
+    lines.length >= 2 && averageLineLength >= 18 && tinyLineCount / lines.length <= 0.35;
 
-  return wrapOcrText(
-    shouldPreserveLineBreaks ? sourceLines.join("\n") : sourceLines.join(" "),
-    maxLineLength,
-  );
+  return wrapOcrText(preserveBreaks ? lines.join("\n") : lines.join(" "), maxLineLength);
 }
 
 function scoreOcrText(text, confidence) {
   const words = text.match(/[A-Za-z]{2,}/g) || [];
   const usefulWords = words.filter((word) => word.length > 2).length;
-  const lineBonus = Math.min(String(text).split(/\r?\n/).length, 8) * 10;
-  return confidence + usefulWords * 8 + Math.min(text.length, 320) * 0.12 + lineBonus;
+  const noiseChars = (text.match(/[^\w\s'"#&@%$+/.,!?;:()=-]/g) || []).length;
+  return confidence + usefulWords * 10 + Math.min(text.length, 360) * 0.1 - noiseChars * 4;
 }
 
 function loadImage(url) {
@@ -214,168 +215,304 @@ function loadImage(url) {
     const image = new window.Image();
     image.crossOrigin = "anonymous";
     image.onload = () => resolve(image);
-    image.onerror = reject;
+    image.onerror = () => reject(new Error("Image could not be loaded for OCR."));
     image.src = url;
   });
 }
 
-function getCrops(profile) {
-  const shared = [
-    { left: 0, top: 0, width: 1, height: 1, psm: "sparse" },
-    { left: 0.03, top: 0.04, width: 0.94, height: 0.42, psm: "block" },
-    { left: 0.03, top: 0.3, width: 0.94, height: 0.44, psm: "block" },
-    { left: 0.03, top: 0.58, width: 0.94, height: 0.38, psm: "block" },
-  ];
-  if (profile === "spell") {
-    return [
-      ...shared,
-      { left: 0, top: 0, width: 0.52, height: 1, psm: "sparse" },
-      { left: 0.48, top: 0, width: 0.52, height: 1, psm: "sparse" },
-    ];
-  }
-  return shared;
+function normalizeCrop(crop) {
+  if (!crop) return null;
+  const x = clamp(Number(crop.x) || 0, 0, 1);
+  const y = clamp(Number(crop.y) || 0, 0, 1);
+  const width = clamp(Number(crop.width) || 0, 0, 1 - x);
+  const height = clamp(Number(crop.height) || 0, 0, 1 - y);
+  if (width < 0.02 || height < 0.02) return null;
+  return { x, y, width, height };
 }
 
-function paintOcrMode(ctx, width, height, mode) {
+function sharpenImageData(ctx, width, height, amount = 0.35) {
+  const source = ctx.getImageData(0, 0, width, height);
+  const input = source.data;
+  const output = new Uint8ClampedArray(input);
+  const kernel = [0, -amount, 0, -amount, 1 + amount * 4, -amount, 0, -amount, 0];
+
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = (y * width + x) * 4;
+      for (let channel = 0; channel < 3; channel += 1) {
+        let value = 0;
+        let kernelIndex = 0;
+        for (let ky = -1; ky <= 1; ky += 1) {
+          for (let kx = -1; kx <= 1; kx += 1) {
+            const sourceIndex = ((y + ky) * width + (x + kx)) * 4 + channel;
+            value += input[sourceIndex] * kernel[kernelIndex];
+            kernelIndex += 1;
+          }
+        }
+        output[index + channel] = clamp(value, 0, 255);
+      }
+    }
+  }
+
+  ctx.putImageData(new ImageData(output, width, height), 0, 0);
+}
+
+function processPixels(ctx, width, height, mode) {
   const imageData = ctx.getImageData(0, 0, width, height);
   const data = imageData.data;
+  const contrast = mode === "fast" ? 1.25 : 1.45;
+  const threshold = mode === "threshold";
+  const invertLightText = mode === "lightText";
+
   for (let index = 0; index < data.length; index += 4) {
     const red = data[index];
     const green = data[index + 1];
     const blue = data[index + 2];
     const alpha = data[index + 3] / 255;
-    const luminance = (red * 0.2126 + green * 0.7152 + blue * 0.0722) * alpha + 255 * (1 - alpha);
-    const maxChannel = Math.max(red, green, blue);
-    const minChannel = Math.min(red, green, blue);
-    const saturation = maxChannel ? (maxChannel - minChannel) / maxChannel : 0;
-    let next = luminance;
+    let luminance =
+      (red * 0.2126 + green * 0.7152 + blue * 0.0722) * alpha + 255 * (1 - alpha);
+    luminance = clamp((luminance - 128) * contrast + 128, 0, 255);
 
-    if (mode === "highContrast") {
-      next = luminance > 142 ? 255 : 0;
-    } else if (mode === "darkText") {
-      next = luminance < 158 || (saturation > 0.28 && luminance < 210) ? 0 : 255;
-    } else if (mode === "lightText") {
-      next = luminance > 142 && saturation < 0.72 ? 0 : 255;
-    } else if (mode === "colorText") {
-      next = saturation > 0.2 && luminance < 238 ? 0 : 255;
+    if (invertLightText) {
+      luminance = luminance > 145 ? 0 : 255;
+    } else if (threshold) {
+      luminance = luminance > 150 ? 255 : 0;
     }
 
-    data[index] = next;
-    data[index + 1] = next;
-    data[index + 2] = next;
+    data[index] = luminance;
+    data[index + 1] = luminance;
+    data[index + 2] = luminance;
     data[index + 3] = 255;
   }
+
   ctx.putImageData(imageData, 0, 0);
+  if (mode !== "fast") sharpenImageData(ctx, width, height, mode === "threshold" ? 0.2 : 0.35);
 }
 
-export async function imageToOcrSources(url, { profile = "instagram" } = {}) {
-  const image = await loadImage(url);
-  const sourceWidth = image.naturalWidth || image.width;
-  const sourceHeight = image.naturalHeight || image.height;
-  const modes = ["grayscale", "highContrast", "darkText", "lightText", "colorText"];
-  const sources = [];
+function createSourceCanvas(image, { crop, mode, scanMode, preprocess = true }) {
+  const naturalWidth = image.naturalWidth || image.width;
+  const naturalHeight = image.naturalHeight || image.height;
+  const safeCrop = normalizeCrop(crop) || { x: 0, y: 0, width: 1, height: 1 };
+  const sourceX = Math.round(naturalWidth * safeCrop.x);
+  const sourceY = Math.round(naturalHeight * safeCrop.y);
+  const cropWidth = Math.max(1, Math.round(naturalWidth * safeCrop.width));
+  const cropHeight = Math.max(1, Math.round(naturalHeight * safeCrop.height));
+  const maxDimension = scanMode === "fast" ? MAX_FAST_DIMENSION : MAX_ACCURATE_DIMENSION;
+  const scaleByMax = Math.min(1, maxDimension / Math.max(cropWidth, cropHeight));
+  const scaleByMin =
+    safeCrop.width < 0.98 || safeCrop.height < 0.98
+      ? Math.max(1, MIN_SELECTED_DIMENSION / Math.max(cropWidth, cropHeight))
+      : 1;
+  const scale = clamp(Math.max(scaleByMax, scaleByMin), 0.25, 3);
+  const width = Math.max(1, Math.round(cropWidth * scale));
+  const height = Math.max(1, Math.round(cropHeight * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, width, height);
+  ctx.drawImage(image, sourceX, sourceY, cropWidth, cropHeight, 0, 0, width, height);
+  if (preprocess && mode !== "raw") {
+    processPixels(ctx, width, height, mode);
+  }
+  return canvas;
+}
 
-  getCrops(profile).forEach((crop, cropIndex) => {
-    modes.forEach((mode) => {
-      const sourceX = Math.round(sourceWidth * crop.left);
-      const sourceY = Math.round(sourceHeight * crop.top);
-      const cropWidth = Math.max(1, Math.round(sourceWidth * crop.width));
-      const cropHeight = Math.max(1, Math.round(sourceHeight * crop.height));
-      const scale = Math.max(1.5, Math.min(3.4, 2800 / Math.max(cropWidth, cropHeight)));
-      const width = Math.max(1, Math.round(cropWidth * scale));
-      const height = Math.max(1, Math.round(cropHeight * scale));
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = "high";
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, width, height);
-      ctx.drawImage(image, sourceX, sourceY, cropWidth, cropHeight, 0, 0, width, height);
-      paintOcrMode(ctx, width, height, mode);
-      sources.push({
-        cropIndex,
-        key: `${profile}-${mode}-${cropIndex}`,
-        mode,
-        psm: crop.psm,
-        source: canvas.toDataURL("image/png"),
-      });
+function buildSourcePlan({ profile, scanMode, crop, preprocess = true }) {
+  const selectedCrop = normalizeCrop(crop);
+  if (!preprocess) {
+    return [{ mode: "raw", psm: "block", crop: selectedCrop }];
+  }
+
+  if (scanMode === "fast") {
+    return [{ mode: "fast", psm: "block", crop: selectedCrop }];
+  }
+
+  if (selectedCrop) {
+    return [
+      { mode: "accurate", psm: "block", crop: selectedCrop },
+      { mode: "threshold", psm: "block", crop: selectedCrop },
+      { mode: "lightText", psm: "sparse", crop: selectedCrop },
+    ];
+  }
+
+  if (profile === "instagram") {
+    return [
+      { mode: "accurate", psm: "sparse", crop: null },
+      { mode: "threshold", psm: "sparse", crop: null },
+    ];
+  }
+
+  return [
+    { mode: "accurate", psm: "block", crop: null },
+    { mode: "threshold", psm: "block", crop: null },
+    { mode: "lightText", psm: "sparse", crop: null },
+  ];
+}
+
+export async function imageToOcrSources(
+  url,
+  { profile = "instagram", scanMode = "accurate", crop = null, preprocess = true } = {},
+) {
+  const image = await loadImage(url);
+  const plan = buildSourcePlan({ profile, scanMode, crop, preprocess });
+  return plan.map((source, index) => {
+    const canvas = createSourceCanvas(image, {
+      crop: source.crop,
+      mode: source.mode,
+      scanMode,
+      preprocess,
     });
+    return {
+      key: `${profile}-${scanMode}-${source.mode}-${index}`,
+      mode: source.mode,
+      psm: source.psm,
+      source: canvas.toDataURL("image/png"),
+      width: canvas.width,
+      height: canvas.height,
+    };
+  });
+}
+
+async function ensureOcrWorker() {
+  if (workerInstance) return workerInstance;
+  if (workerPromise) return workerPromise;
+
+  const { createWorker } = await import("tesseract.js");
+  const baseUrl = import.meta.env.BASE_URL || "/";
+  const langPath = `${baseUrl.replace(/\/?$/, "/")}tessdata`;
+
+  workerPromise = createWorker(
+    "eng",
+    1,
+    {
+      langPath,
+      logger: (message) => {
+        if (typeof message.progress === "number" && activeProgress) {
+          activeProgress(message.progress);
+        }
+      },
+    },
+    {
+      load_system_dawg: "0",
+      load_freq_dawg: "0",
+    },
+  ).then((worker) => {
+    workerInstance = worker;
+    return worker;
   });
 
-  return sources;
+  return workerPromise;
+}
+
+export async function cancelBrowserOcr() {
+  activeRunId += 1;
+  activeProgress = null;
+  if (workerInstance) {
+    const worker = workerInstance;
+    workerInstance = null;
+    workerPromise = null;
+    await worker.terminate().catch(() => {});
+  }
 }
 
 export async function runBrowserOcr(
   imageUrl,
-  { maxLineLength = 42, onProgress, profile = "instagram" } = {},
+  {
+    maxLineLength = 72,
+    onProgress,
+    onStatus,
+    profile = "instagram",
+    scanMode = "accurate",
+    crop = null,
+    preprocess = true,
+  } = {},
 ) {
-  const { createWorker, PSM } = await import("tesseract.js");
-  const sources = await imageToOcrSources(imageUrl, { profile });
-  let worker;
-  try {
-    worker = await createWorker(
-      "eng",
-      1,
-      {
-        logger: (message) => {
-          if (typeof message.progress === "number") {
-            onProgress?.(Math.round(message.progress * 100));
-          }
-        },
-      },
-      {
-        load_system_dawg: "0",
-        load_freq_dawg: "0",
-      },
-    );
+  const runId = activeRunId + 1;
+  activeRunId = runId;
+  const { PSM } = await import("tesseract.js");
 
-    const candidates = [];
-    for (let index = 0; index < sources.length; index += 1) {
-      const pageSegMode =
-        sources[index].psm === "block" ? PSM.SINGLE_BLOCK : PSM.SPARSE_TEXT;
-      await worker.setParameters({
-        tessedit_char_whitelist: OCR_CHAR_WHITELIST,
-        preserve_interword_spaces: "1",
-        tessedit_pageseg_mode: pageSegMode,
-        user_defined_dpi: "300",
-      });
-      const result = await worker.recognize(sources[index].source, {}, { blocks: true });
-      const confidence = Math.round(result.data.confidence || 0);
-      const text = normalizeOcrDisplayText(arrangeOcrWords(result.data), maxLineLength);
-      const score = scoreOcrText(text, confidence);
-      if (text) candidates.push({ confidence, score, text });
-      onProgress?.(Math.max(5, Math.min(98, Math.round(((index + 1) / sources.length) * 100))));
-    }
+  onStatus?.("Preparing image");
+  onProgress?.(3);
+  const sources = await imageToOcrSources(imageUrl, {
+    profile,
+    scanMode,
+    crop,
+    preprocess,
+  });
+  if (runId !== activeRunId) throw new Error("OCR scan cancelled.");
 
-    const best = candidates.reduce(
-      (winner, candidate) => (candidate.score > winner.score ? candidate : winner),
-      { confidence: 0, score: 0, text: "" },
-    );
-    const mergedLines = [];
-    const seen = new Set();
-    for (const candidate of [...candidates].sort((a, b) => b.score - a.score)) {
-      for (const line of candidate.text.split(/\r?\n/)) {
-        const normalized = line.toLowerCase().replace(/[^a-z0-9]+/g, "");
-        if (!normalized || seen.has(normalized) || !shouldKeepOcrLine(line)) continue;
-        seen.add(normalized);
-        mergedLines.push(line.trim());
-      }
-    }
+  onStatus?.("Loading OCR engine");
+  const worker = await ensureOcrWorker();
+  if (runId !== activeRunId) throw new Error("OCR scan cancelled.");
 
-    const mergedText = normalizeOcrDisplayText(mergedLines.join("\n"), maxLineLength);
-    const mergedScore = scoreOcrText(mergedText, best.confidence);
-    const finalText =
-      mergedText && (mergedLines.length > best.text.split(/\r?\n/).length || mergedScore >= best.score * 0.78)
-        ? mergedText
-        : best.text;
+  const candidates = [];
+  for (let index = 0; index < sources.length; index += 1) {
+    const source = sources[index];
+    const pageSegMode = source.psm === "block" ? PSM.SINGLE_BLOCK : PSM.SPARSE_TEXT;
+    const sourceStart = 10 + Math.round((index / sources.length) * 78);
+    const sourceSpan = Math.max(8, Math.round(78 / sources.length));
 
-    return {
-      confidence: best.confidence,
-      text: finalText || "",
+    onStatus?.(`Reading text ${index + 1}/${sources.length}`);
+    activeProgress = (progress) => {
+      onProgress?.(Math.min(92, sourceStart + Math.round(progress * sourceSpan)));
     };
-  } finally {
-    if (worker) await worker.terminate();
+
+    await worker.setParameters({
+      tessedit_char_whitelist: OCR_CHAR_WHITELIST,
+      preserve_interword_spaces: "1",
+      tessedit_pageseg_mode: pageSegMode,
+      user_defined_dpi: "300",
+    });
+
+    const result = await worker.recognize(source.source, {}, { blocks: true });
+    if (runId !== activeRunId) throw new Error("OCR scan cancelled.");
+
+    const confidence = Math.round(result.data.confidence || 0);
+    const text = normalizeOcrDisplayText(arrangeOcrWords(result.data), maxLineLength);
+    const score = scoreOcrText(text, confidence);
+    if (text) candidates.push({ confidence, score, text, mode: source.mode });
+    onProgress?.(Math.min(94, sourceStart + sourceSpan));
   }
+
+  activeProgress = null;
+  onStatus?.("Cleaning text");
+
+  const best = candidates.reduce(
+    (winner, candidate) => (candidate.score > winner.score ? candidate : winner),
+    { confidence: 0, score: 0, text: "", mode: "none" },
+  );
+  const mergedLines = [];
+  const seen = new Set();
+
+  for (const candidate of [...candidates].sort((a, b) => b.score - a.score)) {
+    for (const line of candidate.text.split(/\r?\n/)) {
+      const normalized = line.toLowerCase().replace(/[^a-z0-9]+/g, "");
+      if (!normalized || seen.has(normalized) || !shouldKeepOcrLine(line)) continue;
+      seen.add(normalized);
+      mergedLines.push(line.trim());
+    }
+  }
+
+  const mergedText = normalizeOcrDisplayText(mergedLines.join("\n"), maxLineLength);
+  const mergedScore = scoreOcrText(mergedText, best.confidence);
+  const finalText =
+    mergedText &&
+    (mergedLines.length > best.text.split(/\r?\n/).filter(Boolean).length ||
+      mergedScore >= best.score * 0.82)
+      ? mergedText
+      : best.text;
+
+  onProgress?.(100);
+  onStatus?.("Done");
+
+  return {
+    confidence: best.confidence,
+    mode: best.mode,
+    sourceCount: sources.length,
+    text: finalText || "",
+  };
 }

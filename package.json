@@ -1,18 +1,63 @@
 {
+  "name": "contentflow",
+  "version": "0.1.0",
+  "private": true,
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "electron:dev": "concurrently -k --success first \"npm run dev\" \"wait-on http://127.0.0.1:5173 && electron .\"",
+    "electron:build": "npm run build && electron-builder --win nsis",
+    "electron:pack": "npm run build && electron-builder --dir"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.4",
+    "@tesseract.js-data/eng": "^1.0.0",
     "@vitejs/plugin-react": "latest",
+    "dictionary-en": "^4.0.0",
+    "electron-updater": "^6.8.3",
+    "exifr": "^7.1.3",
+    "express": "^5.2.1",
     "jszip": "latest",
     "lucide-react": "latest",
+    "nspell": "^2.1.5",
     "react": "latest",
     "react-dom": "latest",
     "tailwindcss": "^4.2.4",
     "tesseract.js": "^7.0.0",
     "vite": "latest"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1",
+    "electron": "^42.0.0",
+    "electron-builder": "^26.8.1",
+    "wait-on": "^9.0.5"
+  },
+  "build": {
+    "appId": "com.contentflow.desktop",
+    "productName": "ContentFlow",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "server/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico",
+      "signAndEditExecutable": false,
+      "forceCodeSigning": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico"
+    }
   }
 }
