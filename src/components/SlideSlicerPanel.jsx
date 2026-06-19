@@ -7,6 +7,7 @@ import {
   Grid3X3,
   Image as ImageIcon,
   FileArchive,
+  Maximize2,
   Trash2,
   X,
   Sparkles,
@@ -22,6 +23,76 @@ import {
 } from "../constants/presets.jsx";
 
 const iconProps = { strokeWidth: 1.75 };
+
+function LiveSlicerPreview({
+  direction,
+  expanded = false,
+  onImport,
+  pan,
+  slideCount,
+  slideHeight,
+  slideWidth,
+  sourceImage,
+  zoom,
+}) {
+  const wholeWidth = direction === "horizontal" ? slideWidth * slideCount : slideWidth;
+  const wholeHeight = direction === "vertical" ? slideHeight * slideCount : slideHeight;
+  const previewRatio = `${Math.max(1, wholeWidth)} / ${Math.max(1, wholeHeight)}`;
+
+  if (!sourceImage) {
+    return (
+      <button type="button" onClick={onImport} className="grid h-full w-full place-items-center text-center select-none">
+        <span>
+          <span className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900 icon-float">
+            <ImageIcon className="text-zinc-400 dark:text-zinc-500 icon-pop" size={28} {...iconProps} />
+          </span>
+          <span className="block text-base font-black tracking-tight text-zinc-900 dark:text-zinc-100">No source image</span>
+          <span className="mt-2 block font-mono text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            Click or drag to import a carousel design.
+          </span>
+          <span className="mt-3 block text-[10px] font-black uppercase tracking-widest text-zinc-400 transition-colors group-hover:text-zinc-600 dark:text-zinc-600 dark:group-hover:text-zinc-400">
+            PNG / JPG / WEBP
+          </span>
+        </span>
+      </button>
+    );
+  }
+
+  return (
+    <div className={`grid h-full w-full place-items-center ${expanded ? "p-4 sm:p-8" : "p-4"}`}>
+      <div
+        data-testid="slicer-live-crop"
+        className="group/preview relative max-h-full max-w-full overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-black"
+        style={{
+          aspectRatio: previewRatio,
+          height: wholeWidth > wholeHeight ? "auto" : "100%",
+          width: wholeWidth > wholeHeight ? "100%" : "auto",
+        }}
+      >
+        <img
+          src={sourceImage}
+          alt="Source"
+          draggable="false"
+          className="absolute inset-0 h-full w-full select-none object-cover transition-transform duration-75"
+          style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` }}
+        />
+        <div className={`pointer-events-none absolute inset-0 flex ${direction === "horizontal" ? "flex-row" : "flex-col"}`}>
+          {Array.from({ length: slideCount }).map((_, index) => (
+            <div
+              key={index}
+              className="grid flex-1 place-items-center border border-white/75 bg-black/10 font-mono text-[10px] font-black uppercase text-white shadow-sm"
+            >
+              Slide {index + 1}
+            </div>
+          ))}
+        </div>
+        <div className="pointer-events-none absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-center text-xs font-black uppercase tracking-widest text-white shadow-2xl backdrop-blur-md">
+          {slideWidth} x {slideHeight}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function SlideSlicerPanel() {
   const [activeTab, setActiveTab] = useState("slicer"); // "slicer" | "presets"
@@ -41,6 +112,7 @@ export default function SlideSlicerPanel() {
   });
   const [expandedSlice, setExpandedSlice] = useState(null);
   const [expandedZoom, setExpandedZoom] = useState(1);
+  const [expandedSource, setExpandedSource] = useState(false);
   const [customPresets, setCustomPresets] = useState(() => {
     const saved = localStorage.getItem("studio_custom_presets_v2");
     return saved ? JSON.parse(saved) : INITIAL_CUSTOM_PRESETS;
@@ -207,6 +279,7 @@ export default function SlideSlicerPanel() {
     const height = Math.max(1, Number(preset.h) || 1080);
     setSlideWidth(width);
     setSlideHeight(height);
+    setGeneratedSlices([]);
     setPresetDraft((draft) => ({ ...draft, w: width, h: height }));
     setStatus({ type: "success", message: `${preset.name} preset applied: ${width}x${height}px.` });
     setActiveTab("slicer");
@@ -439,13 +512,19 @@ export default function SlideSlicerPanel() {
                     label="Width"
                     type="number"
                     value={slideWidth}
-                    onChange={(event) => setSlideWidth(Number(event.target.value))}
+                    onChange={(event) => {
+                      setSlideWidth(Number(event.target.value));
+                      setGeneratedSlices([]);
+                    }}
                   />
                   <Input
                     label="Height"
                     type="number"
                     value={slideHeight}
-                    onChange={(event) => setSlideHeight(Number(event.target.value))}
+                    onChange={(event) => {
+                      setSlideHeight(Number(event.target.value));
+                      setGeneratedSlices([]);
+                    }}
                   />
                 </div>
 
@@ -455,9 +534,10 @@ export default function SlideSlicerPanel() {
                     type="number"
                     min="1"
                     value={slideCount}
-                    onChange={(event) =>
-                      setSlideCount(Math.max(1, Number(event.target.value)))
-                    }
+                    onChange={(event) => {
+                      setSlideCount(Math.max(1, Number(event.target.value)));
+                      setGeneratedSlices([]);
+                    }}
                   />
                   <div className="grid content-end">
                     <div className="grid grid-cols-2 gap-1 rounded-2xl border border-zinc-200 p-1 dark:border-zinc-800 bg-white dark:bg-zinc-950">
@@ -467,7 +547,10 @@ export default function SlideSlicerPanel() {
                       ].map(([value, label]) => (
                         <button
                           key={value}
-                          onClick={() => setDirection(value)}
+                          onClick={() => {
+                            setDirection(value);
+                            setGeneratedSlices([]);
+                          }}
                           className={`rounded-xl py-2.5 text-xs font-black transition-all duration-200 ease-out ${
                             direction === value
                               ? "bg-zinc-950 text-white shadow-sm dark:bg-white dark:text-zinc-950"
@@ -528,7 +611,7 @@ export default function SlideSlicerPanel() {
 
       <section className="grid content-start gap-5">
         <Card
-          className={`grid aspect-video place-items-center overflow-hidden border-zinc-800 bg-zinc-950 group ${
+          className={`group relative grid aspect-video place-items-center overflow-hidden border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 ${
             sourceImage
               ? "cursor-grab active:cursor-grabbing"
               : "dropzone-interactive cursor-pointer"
@@ -546,37 +629,29 @@ export default function SlideSlicerPanel() {
             !sourceImage ? () => fileInputRef.current?.click() : undefined
           }
         >
+          <Button
+            icon={Maximize2}
+            size="sm"
+            variant="secondary"
+            className="absolute right-4 top-4 z-20"
+            onClick={(event) => {
+              event.stopPropagation();
+              setExpandedSource(true);
+            }}
+          >
+            Maximize
+          </Button>
           {sourceImage ? (
-            <div
-              className="group/preview relative flex h-full w-full items-center justify-center overflow-hidden bg-black p-4 transition-transform duration-75"
-              style={{
-                transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
-              }}
-            >
-              <img
-                src={sourceImage}
-                alt="Source"
-                draggable="false"
-                className="max-h-[34em] max-w-full select-none rounded-2xl bg-black object-contain shadow-2xl"
-              />
-              <div
-                className={`pointer-events-none absolute inset-0 flex ${
-                  direction === "horizontal" ? "flex-row" : "flex-col"
-                }`}
-              >
-                {Array.from({ length: slideCount }).map((_, index) => (
-                  <div
-                    key={index}
-                    className="grid flex-1 place-items-center border border-white/50 bg-black/10 font-mono text-[10px] font-black uppercase text-white shadow-sm"
-                  >
-                    Slide {index + 1}
-                  </div>
-                ))}
-              </div>
-              <div className="pointer-events-none absolute bottom-5 left-1/2 z-20 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-center text-xs font-black uppercase tracking-widest text-white opacity-0 shadow-2xl backdrop-blur-md transition duration-200 group-hover/preview:opacity-100">
-                {slideWidth} x {slideHeight}
-              </div>
-            </div>
+            <LiveSlicerPreview
+              direction={direction}
+              onImport={() => fileInputRef.current?.click()}
+              pan={pan}
+              slideCount={slideCount}
+              slideHeight={slideHeight}
+              slideWidth={slideWidth}
+              sourceImage={sourceImage}
+              zoom={zoom}
+            />
           ) : (
             <div className="text-center select-none">
               <div className="mx-auto mb-5 grid h-16 w-16 place-items-center rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900 icon-float">
@@ -659,6 +734,43 @@ export default function SlideSlicerPanel() {
           </Card>
         )}
       </section>
+
+      {expandedSource && (
+        <div className="fixed inset-0 z-[9998] flex flex-col bg-zinc-950/85 p-4 backdrop-blur-xl sm:p-8">
+          <Card className="flex min-h-0 flex-1 flex-col overflow-hidden border-zinc-800 bg-zinc-900 text-white">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-zinc-800 px-5 py-4 sm:px-8">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Live Slicer Preview</p>
+                <h3 className="mt-1 text-lg font-black tracking-tight">
+                  {slideCount} {direction} slide{slideCount === 1 ? "" : "s"} at {slideWidth} x {slideHeight}
+                </h3>
+              </div>
+              <Button icon={X} size="icon" variant="secondary" onClick={() => setExpandedSource(false)} aria-label="Close slicer preview" />
+            </div>
+            <div
+              className={`min-h-0 flex-1 overflow-hidden bg-white dark:bg-zinc-950 ${
+                sourceImage ? "cursor-grab active:cursor-grabbing" : ""
+              }`}
+              onMouseDown={startDrag}
+              onMouseMove={moveDrag}
+              onMouseUp={() => setIsDragging(false)}
+              onMouseLeave={() => setIsDragging(false)}
+            >
+              <LiveSlicerPreview
+                direction={direction}
+                expanded
+                onImport={() => fileInputRef.current?.click()}
+                pan={pan}
+                slideCount={slideCount}
+                slideHeight={slideHeight}
+                slideWidth={slideWidth}
+                sourceImage={sourceImage}
+                zoom={zoom}
+              />
+            </div>
+          </Card>
+        </div>
+      )}
 
       {expandedSlice && (
         <div

@@ -1,41 +1,71 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { formatTime, loadYTApi } from "./youtubeUtils";
 
 export default function TrimTimeline({ min, max, start, end, onChange, onBlur, videoId, thumbnail }) {
   const trackRef = useRef(null);
   const playerRef = useRef(null);
   const playerInstance = useRef(null);
+  const seekTimerRef = useRef(null);
   const [hoverTime, setHoverTime] = useState(null);
   const [dragging, setDragging] = useState(null);
+  const [playerReady, setPlayerReady] = useState(false);
 
   useEffect(() => {
-    if (!videoId) return;
-    let isMounted = true;
-    loadYTApi().then((YT) => {
-      if (!isMounted || !playerRef.current) return;
-      playerInstance.current = new YT.Player(playerRef.current, {
-        videoId,
-        playerVars: { controls: 0, disablekb: 1, fs: 0, modestbranding: 1, rel: 0, mute: 1, playsinline: 1, showinfo: 0 },
-        events: {
-          onReady: (e) => { e.target.mute(); }
-        }
+    if (hoverTime === null || !videoId || playerInstance.current) return undefined;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      loadYTApi().then((YT) => {
+        if (cancelled || !playerRef.current || playerInstance.current) return;
+        playerInstance.current = new YT.Player(playerRef.current, {
+          videoId,
+          playerVars: {
+            autoplay: 0,
+            controls: 0,
+            disablekb: 1,
+            fs: 0,
+            modestbranding: 1,
+            mute: 1,
+            playsinline: 1,
+            rel: 0,
+          },
+          events: {
+            onReady: (event) => {
+              event.target.mute();
+              event.target.cueVideoById({ videoId, startSeconds: hoverTime || start });
+              event.target.seekTo(hoverTime || start, true);
+              event.target.pauseVideo?.();
+              setPlayerReady(true);
+            },
+          },
+        });
       });
-    });
+    }, 180);
     return () => {
-      isMounted = false;
-      if (playerInstance.current?.destroy) playerInstance.current.destroy();
+      cancelled = true;
+      window.clearTimeout(timer);
     };
-  }, [videoId]);
+  }, [hoverTime, videoId]);
 
-  const scrubTimeout = useRef(null);
   useEffect(() => {
-    if (hoverTime !== null && playerInstance.current?.seekTo) {
-      clearTimeout(scrubTimeout.current);
-      scrubTimeout.current = setTimeout(() => {
+    if (hoverTime === null || !playerReady || !playerInstance.current?.seekTo) return;
+    window.clearTimeout(seekTimerRef.current);
+    seekTimerRef.current = window.setTimeout(() => {
+      try {
         playerInstance.current.seekTo(hoverTime, true);
-      }, 50);
-    }
-  }, [hoverTime]);
+        playerInstance.current.pauseVideo?.();
+      } catch {
+        // YouTube player can briefly reject seeks while it is buffering.
+      }
+    }, 120);
+    return () => window.clearTimeout(seekTimerRef.current);
+  }, [hoverTime, playerReady]);
+
+  useEffect(() => {
+    return () => {
+      window.clearTimeout(seekTimerRef.current);
+      playerInstance.current?.destroy?.();
+    };
+  }, []);
 
   const getValFromEvent = (e) => {
     if (!trackRef.current) return 0;
@@ -76,9 +106,17 @@ export default function TrimTimeline({ min, max, start, end, onChange, onBlur, v
       <div className={`absolute -top-[5.5rem] bg-zinc-900 text-white font-mono text-[10px] font-bold p-1.5 rounded-lg shadow-xl z-30 transform -translate-x-1/2 pointer-events-none flex flex-col items-center gap-1.5 border border-zinc-700 transition-all duration-200 ${hoverTime !== null ? 'opacity-100 scale-100' : 'opacity-0 scale-95'}`}
            style={{ left: `${pct(hoverTime || start)}%` }}>
         <div className="w-24 h-14 rounded-[4px] overflow-hidden bg-black shrink-0 relative border border-zinc-800 pointer-events-none">
-           {thumbnail && <img src={thumbnail} alt="" className="absolute inset-0 w-full h-full object-cover opacity-50" />}
-           <div className="absolute inset-0 w-full h-full transform scale-[1.3] pointer-events-none">
-             <div ref={playerRef} className="w-full h-full pointer-events-none" />
+           {thumbnail && (
+             <img
+               src={thumbnail}
+               alt=""
+               className={`absolute inset-0 z-0 h-full w-full object-cover transition-opacity duration-150 ${playerReady ? "opacity-0" : "opacity-80"}`}
+               loading="lazy"
+               decoding="async"
+             />
+           )}
+           <div className={`absolute inset-0 z-10 h-full w-full scale-[1.28] pointer-events-none transition-opacity duration-150 ${playerReady ? "opacity-100" : "opacity-0"}`}>
+             <div ref={playerRef} className="h-full w-full pointer-events-none" />
            </div>
         </div>
         <span>{formatTime(hoverTime || start)}</span>

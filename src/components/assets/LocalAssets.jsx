@@ -75,7 +75,7 @@ function getDroppedContentFlowFiles(event) {
 
 function getDroppedFilePaths(event) {
   return Array.from(event.dataTransfer?.files || [])
-    .map((file) => file.path || "")
+    .map((file) => file.path || window.contentFlowFiles?.getDroppedFilePath?.(file) || "")
     .filter(Boolean);
 }
 

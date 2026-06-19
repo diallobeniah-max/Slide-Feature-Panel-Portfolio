@@ -1,20 +1,23 @@
 {
   "name": "contentflow",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "private": true,
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
+    "postinstall": "node scripts/install-ytdlp.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "electron:dev": "concurrently -k --success first \"npm run dev\" \"wait-on http://127.0.0.1:5173 && electron .\"",
     "electron:build": "npm run build && electron-builder --win nsis",
     "electron:pack": "npm run build && electron-builder --dir"
   },
   "dependencies": {
+    "@paddleocr/paddleocr-js": "^0.3.2",
     "@tailwindcss/vite": "^4.2.4",
     "@tesseract.js-data/eng": "^1.0.0",
     "@vitejs/plugin-react": "latest",
+    "7zip-bin": "^5.2.0",
     "dictionary-en": "^4.0.0",
     "electron-updater": "^6.8.3",
     "exifr": "^7.1.3",

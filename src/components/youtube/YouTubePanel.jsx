@@ -1,11 +1,16 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   Download, Trash2, Plus, Loader2, Link as LinkIcon, 
-  X, List, Video, Search, Clipboard, ListVideo
+  X, List, Video, Search, Clipboard, ListVideo, Pause, Play
 } from "lucide-react";
 import { Card, Button, Badge } from "../ui";
+import {
+  getWebDownloadFolderHandle,
+  getWebDownloadFolderPreferences,
+  saveBlobToWebDownloadFolder,
+} from "../../utils/downloadFolders.js";
 
-import { isValidYoutubeUrl, loadHistory, saveHistory } from "./youtubeUtils";
+import { getVideoPlatformLabel, isSupportedVideoUrl, isYoutubeUrl, loadHistory, saveHistory } from "./youtubeUtils";
 import QueueItem from "./QueueItem";
 import DownloadHistory from "./DownloadHistory";
 
@@ -18,16 +23,45 @@ export default function YouTubePanel() {
   
   const [globalFormat, setGlobalFormat] = useState("mp4");
   const [isAdding, setIsAdding] = useState(false);
+  const queueRef = useRef(queue);
+  const activeDownloadsRef = useRef(new Map());
+  const [desktopPrefs, setDesktopPrefs] = useState(() =>
+    window.contentFlow?.desktop?.getPreferences ? null : getWebDownloadFolderPreferences(),
+  );
 
   // History state
   const [history, setHistory] = useState([]);
+  useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { setHistory(loadHistory()); }, []);
+  useEffect(() => {
+    const loadPrefs = () => {
+      if (window.contentFlow?.desktop?.getPreferences) {
+        window.contentFlow.desktop.getPreferences().then((prefs) => setDesktopPrefs(prefs || null)).catch(() => {});
+      } else {
+        setDesktopPrefs(getWebDownloadFolderPreferences());
+      }
+    };
+    loadPrefs();
+    window.addEventListener("contentflow-download-folders-changed", loadPrefs);
+    return () => window.removeEventListener("contentflow-download-folders-changed", loadPrefs);
+  }, []);
 
   const updateItem = useCallback((id, patch) => {
     setQueue(prev => prev.map(q => q.id === id ? { ...q, ...patch } : q));
-  }, []);
+    if (Object.prototype.hasOwnProperty.call(patch, "title")) {
+      setHistory(prev => {
+        const updated = prev.map(h => {
+          const item = queue.find(q => q.id === id);
+          return item && h.url === item.url ? { ...h, title: patch.title } : h;
+        });
+        saveHistory(updated);
+        return updated;
+      });
+    }
+  }, [queue]);
 
   const removeItem = useCallback((id) => {
+    activeDownloadsRef.current.get(id)?.controller.abort();
     setQueue(prev => prev.filter(q => q.id !== id));
   }, []);
 
@@ -37,11 +71,11 @@ export default function YouTubePanel() {
       const text = await navigator.clipboard.readText();
       if (!text) throw new Error("Clipboard empty");
       setUrlInput(text);
-      if (isValidYoutubeUrl(text)) {
+      if (isSupportedVideoUrl(text)) {
         addSingleUrl(text);
       } else {
         window.dispatchEvent(new CustomEvent("studio-notify", {
-          detail: { title: "Invalid URL", message: "Clipboard does not contain a valid YouTube link.", type: "warning" }
+          detail: { title: "Invalid URL", message: "Clipboard does not contain a supported video link.", type: "warning" }
         }));
       }
     } catch (err) {
@@ -51,7 +85,7 @@ export default function YouTubePanel() {
     }
   };
 
-  const fetchInfo = useCallback(async (url) => {
+  const fetchInfo = useCallback(async (url, options = {}) => {
     const id = crypto.randomUUID();
     const item = {
       id, url, title: "", channel: "", thumbnail: "", duration: 0,
@@ -71,35 +105,59 @@ export default function YouTubePanel() {
       if (!res.ok) throw new Error(data.error || "Failed");
 
       setQueue(prev => prev.map(q => q.id === id ? {
-        ...q, title: data.title, channel: data.channel,
+        ...q, title: options.title || data.title, channel: data.channel,
         thumbnail: data.thumbnail, duration: data.duration,
         trimEnd: data.duration, status: "ready",
-        qualities: data.qualities, audioSize: data.audioSize,
+        platform: data.platform, platformLabel: getVideoPlatformLabel(data.platform),
+        qualities: data.qualities, bestSize: data.bestSize, audioSize: data.audioSize,
         subtitleLangs: data.subtitleLangs, viewCount: data.viewCount
       } : q));
+      const readyItem = {
+        ...item,
+        title: options.title || data.title,
+        channel: data.channel,
+        thumbnail: data.thumbnail,
+        duration: data.duration,
+        trimEnd: data.duration,
+        status: "ready",
+        platform: data.platform,
+        platformLabel: getVideoPlatformLabel(data.platform),
+        qualities: data.qualities,
+        bestSize: data.bestSize,
+        audioSize: data.audioSize,
+        subtitleLangs: data.subtitleLangs,
+        viewCount: data.viewCount,
+      };
 
       // Add to history immediately upon successful fetch
       setHistory(prev => {
         const filtered = prev.filter(h => h.url !== url);
         const histItem = {
           id: crypto.randomUUID(), 
-          title: data.title, 
+          title: options.title || data.title,
           date: new Date().toISOString(),
           url: url, 
           thumbnail: data.thumbnail,
           length: data.duration,
-          isYouTube: true
+          platform: data.platform,
+          platformLabel: getVideoPlatformLabel(data.platform),
+          isYouTube: data.platform === "youtube"
         };
         const newHist = [histItem, ...filtered].slice(0, 50);
         saveHistory(newHist);
         return newHist;
       });
+      if (options.autoDownload) {
+        await startDownloadForItem(readyItem);
+      }
+      return readyItem;
     } catch (err) {
       setQueue(prev => prev.map(q => q.id === id ? {
         ...q, status: "error", error: err.message,
       } : q));
+      return null;
     }
-  }, [globalFormat]);
+  }, [globalFormat, desktopPrefs]);
 
   const fetchPlaylist = useCallback(async (url) => {
     try {
@@ -132,15 +190,15 @@ export default function YouTubePanel() {
   const addSingleUrl = async (overrideUrl) => {
     const url = (overrideUrl || urlInput).trim();
     if (!url) return;
-    if (!isValidYoutubeUrl(url)) {
+    if (!isSupportedVideoUrl(url)) {
       window.dispatchEvent(new CustomEvent("studio-notify", {
-        detail: { title: "Invalid URL", message: "Please enter a valid YouTube URL", type: "error" }
+        detail: { title: "Invalid URL", message: "Please enter a YouTube, Facebook, or Instagram link.", type: "error" }
       }));
       return;
     }
     setIsAdding(true);
     setUrlInput("");
-    if (playlistMode && (url.includes('list=') || url.includes('playlist'))) {
+    if (playlistMode && isYoutubeUrl(url) && (url.includes('list=') || url.includes('playlist'))) {
       await fetchPlaylist(url);
     } else {
       await fetchInfo(url);
@@ -150,11 +208,11 @@ export default function YouTubePanel() {
 
   const addBulkUrls = async () => {
     const rawUrls = bulkText.split(/[\n,\s]+/).map(u => u.trim()).filter(Boolean);
-    const urls = [...new Set(rawUrls)].filter(isValidYoutubeUrl);
+    const urls = [...new Set(rawUrls)].filter(isSupportedVideoUrl);
 
     if (urls.length === 0) {
       window.dispatchEvent(new CustomEvent("studio-notify", {
-        detail: { title: "No valid URLs", message: "No valid YouTube URLs found in the text", type: "error" }
+        detail: { title: "No valid URLs", message: "No supported YouTube, Facebook, or Instagram links found in the text.", type: "error" }
       }));
       return;
     }
@@ -169,10 +227,17 @@ export default function YouTubePanel() {
   };
 
   // Helper to read progress from response stream
-  const readProgressStream = async (res, id, safeName, ext, item) => {
+  const readProgressStream = async (res, id, safeName, ext, item, directoryHandle = null) => {
     const contentLength = res.headers.get('content-length');
     const total = parseInt(contentLength, 10);
     let loaded = 0;
+    const streamStartedAt = Date.now();
+
+    const formatEta = (seconds) => {
+      if (!Number.isFinite(seconds) || seconds <= 0) return "Almost done";
+      if (seconds < 60) return `${Math.ceil(seconds)}s left`;
+      return `${Math.ceil(seconds / 60)}m left`;
+    };
 
     const reader = res.body.getReader();
     const chunks = [];
@@ -185,23 +250,33 @@ export default function YouTubePanel() {
       
       if (total) {
         const progress = Math.min(99, Math.round((loaded / total) * 100));
-        setQueue(prev => prev.map(q => q.id === id ? { ...q, progress, stage: 'Downloading...' } : q));
+        const elapsed = Math.max(0.5, (Date.now() - streamStartedAt) / 1000);
+        const speed = loaded / elapsed;
+        const eta = speed > 0 ? formatEta((total - loaded) / speed) : "";
+        setQueue(prev => prev.map(q => q.id === id ? { ...q, progress, eta, stage: 'Downloading...' } : q));
       } else {
         // Indeterminate progress (just keep stage active)
-        setQueue(prev => prev.map(q => q.id === id ? { ...q, stage: 'Processing & Downloading...' } : q));
+        setQueue(prev => prev.map(q => q.id === id ? { ...q, stage: 'Processing & Downloading...', eta: 'Working...' } : q));
       }
     }
 
-    setQueue(prev => prev.map(q => q.id === id ? { ...q, progress: 100, stage: 'Finalizing...' } : q));
+    setQueue(prev => prev.map(q => q.id === id ? { ...q, progress: 100, eta: 'Almost done', stage: 'Finalizing...' } : q));
 
     const blob = new Blob(chunks, { type: res.headers.get('content-type') });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `${safeName}.${ext}`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const disposition = res.headers.get("content-disposition") || "";
+    const headerName = disposition.match(/filename\*?=(?:UTF-8''|\")?([^";]+)/i)?.[1];
+    const fileName = headerName ? decodeURIComponent(headerName.replace(/^"|"$/g, "")) : `${safeName}.${ext}`;
+    if (directoryHandle) {
+      await saveBlobToWebDownloadFolder(directoryHandle, fileName, blob);
+    } else {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = fileName;
+      a.click();
+      window.setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
 
-    setQueue(prev => prev.map(q => q.id === id ? { ...q, status: "done" } : q));
+    setQueue(prev => prev.map(q => q.id === id ? { ...q, status: "done", downloadKind: null, eta: "", progress: 100 } : q));
 
     // Update history with quality and format after successful download
     setHistory(prev => {
@@ -221,17 +296,86 @@ export default function YouTubePanel() {
     });
 
     window.dispatchEvent(new CustomEvent("studio-notify", {
-      detail: { title: "Download Complete", message: safeName, type: "success" }
+      detail: { title: "Download Complete", message: directoryHandle ? `${fileName} saved to your default folder.` : fileName, type: "success" }
     }));
   };
 
-  const downloadItem = useCallback(async (id) => {
-    const item = queue.find(q => q.id === id);
-    if (!item) return;
+  const getVideoGrabberFolder = useCallback(() => {
+    const folders = desktopPrefs?.downloadFolders || {};
+    return folders.useVideoGrabberForAll ? folders.videoGrabber : folders.videoGrabber;
+  }, [desktopPrefs]);
 
-    setQueue(prev => prev.map(q => q.id === id ? { ...q, status: "downloading", progress: 0, stage: 'Preparing...' } : q));
+  const markHistoryDownloaded = useCallback((item) => {
+    setHistory(prev => {
+      const updated = prev.map(h => {
+        if (h.url === item.url) {
+          return {
+            ...h,
+            title: item.title,
+            quality: item.quality,
+            format: item.format,
+            date: new Date().toISOString()
+          };
+        }
+        return h;
+      });
+      saveHistory(updated);
+      return updated;
+    });
+  }, []);
+
+  const startDownloadForItem = useCallback(async (item, controller) => {
+    if (!item) return;
+    const id = item.id;
+    const downloadSessionId = item.downloadSessionId || crypto.randomUUID();
+    const startingProgress = item.status === "paused" ? (item.progress || 0) : 0;
+
+    setQueue(prev => prev.map(q => q.id === id ? {
+      ...q,
+      status: "downloading",
+      downloadKind: "video",
+      downloadSessionId,
+      progress: startingProgress,
+      eta: "Calculating...",
+      stage: startingProgress > 0 ? "Resuming..." : "Preparing...",
+      error: null,
+    } : q));
+
+    const startedAt = Date.now();
+    const estimatedSeconds = Math.max(18, Math.min(240, (item.duration || 120) / 5));
+    const formatEta = (seconds) => {
+      if (!Number.isFinite(seconds) || seconds <= 0) return "Almost done";
+      if (seconds < 60) return `${Math.ceil(seconds)}s left`;
+      return `${Math.ceil(seconds / 60)}m left`;
+    };
+    const preparingProgress = window.setInterval(() => {
+      setQueue(prev => prev.map(q => {
+        if (q.id !== id || q.status !== "downloading") return q;
+        const elapsed = (Date.now() - startedAt) / 1000;
+        const current = q.progress || 0;
+        const planned = Math.round((elapsed / estimatedSeconds) * 92);
+        const drift = elapsed > estimatedSeconds ? Math.min(98, current + 1) : planned;
+        const progress = Math.min(98, Math.max(current, drift));
+        return {
+          ...q,
+          progress,
+          eta: formatEta(Math.max(1, estimatedSeconds - elapsed)),
+          stage: progress < 8 ? "Preparing..." : "Processing video...",
+        };
+      }));
+    }, 900);
 
     try {
+      let webDirectoryHandle = null;
+      if (!window.contentFlow?.platform?.isElectron && desktopPrefs?.downloadFolders?.videoGrabber) {
+        try {
+          webDirectoryHandle = await getWebDownloadFolderHandle("videoGrabber", true);
+        } catch {
+          window.dispatchEvent(new CustomEvent("studio-notify", {
+            detail: { title: "Folder Permission Needed", message: "The download will use your browser's normal download location this time.", type: "warning" },
+          }));
+        }
+      }
       const res = await fetch("/api/yt/download", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -241,7 +385,11 @@ export default function YouTubePanel() {
           end: item.trimEnd > 0 && item.trimEnd < item.duration ? item.trimEnd : undefined,
           format: item.quality === "audio" ? "mp3" : item.format,
           quality: item.quality,
+          folderPath: getVideoGrabberFolder() || undefined,
+          fileName: item.title || undefined,
+          downloadId: downloadSessionId,
         }),
+        signal: controller.signal,
       });
 
       if (!res.ok) {
@@ -254,15 +402,77 @@ export default function YouTubePanel() {
       const ext = item.quality === 'audio' || item.format === 'mp3' ? 'mp3' : item.format;
       const safeName = (item.title || "video").replace(/[^a-zA-Z0-9 _-]/g, "").slice(0, 60);
 
-      await readProgressStream(res, id, safeName, ext, item);
+      window.clearInterval(preparingProgress);
+      if ((res.headers.get("content-type") || "").includes("application/json")) {
+        const data = await res.json();
+        setQueue(prev => prev.map(q => q.id === id ? {
+          ...q,
+          status: "done",
+          progress: 100,
+          eta: "",
+          stage: "Saved",
+          downloadKind: null,
+          savedPath: data.path || "",
+        } : q));
+        markHistoryDownloaded(item);
+        window.dispatchEvent(new CustomEvent("studio-notify", {
+          detail: { title: "Download Saved", message: data.filename || safeName, type: "success" }
+        }));
+      } else {
+        await readProgressStream(res, id, safeName, ext, item, webDirectoryHandle);
+      }
 
     } catch (err) {
-      setQueue(prev => prev.map(q => q.id === id ? { ...q, status: "error", error: err.message } : q));
+      window.clearInterval(preparingProgress);
+      if (err?.name === "AbortError") {
+        setQueue(prev => prev.map(q => q.id === id ? {
+          ...q,
+          status: "paused",
+          eta: "",
+          stage: "Paused",
+          error: null,
+        } : q));
+        return;
+      }
+      setQueue(prev => prev.map(q => q.id === id ? { ...q, status: "error", downloadKind: null, eta: "", error: err.message } : q));
     }
-  }, [queue, history]);
+  }, [getVideoGrabberFolder, markHistoryDownloaded, readProgressStream]);
+
+  const downloadItem = useCallback(async (id) => {
+    const existing = activeDownloadsRef.current.get(id);
+    if (existing) await existing.promise;
+    const item = queueRef.current.find(q => q.id === id);
+    if (!item) return;
+    const controller = new AbortController();
+    const promise = startDownloadForItem(item, controller).finally(() => {
+      const current = activeDownloadsRef.current.get(id);
+      if (current?.controller === controller) activeDownloadsRef.current.delete(id);
+    });
+    activeDownloadsRef.current.set(id, { controller, promise });
+    await promise;
+  }, [startDownloadForItem]);
+
+  const pauseDownload = useCallback((id) => {
+    activeDownloadsRef.current.get(id)?.controller.abort();
+    setQueue(prev => prev.map(item => item.id === id && item.status === "downloading"
+      ? { ...item, status: "paused", eta: "", stage: "Paused" }
+      : item));
+  }, []);
+
+  const pauseAllDownloads = useCallback(() => {
+    for (const { controller } of activeDownloadsRef.current.values()) controller.abort();
+    setQueue(prev => prev.map(item => item.status === "downloading" && item.downloadKind === "video"
+      ? { ...item, status: "paused", eta: "", stage: "Paused" }
+      : item));
+  }, []);
+
+  const resumeAllDownloads = useCallback(async () => {
+    const pausedIds = queueRef.current.filter(item => item.status === "paused").map(item => item.id);
+    await Promise.allSettled(pausedIds.map(downloadItem));
+  }, [downloadItem]);
 
   const downloadSubtitles = async (item, lang, format) => {
-    setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: "downloading", progress: 50, stage: 'Fetching Subtitles' } : q));
+    setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: "downloading", downloadKind: "subtitles", progress: 50, stage: 'Fetching Subtitles' } : q));
     try {
       const res = await fetch("/api/yt/subtitles", {
         method: "POST",
@@ -280,7 +490,7 @@ export default function YouTubePanel() {
       a.download = `${safeName}_${lang}.${format}`;
       a.click();
       URL.revokeObjectURL(a.href);
-      setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: "ready", progress: 0 } : q));
+      setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: "ready", downloadKind: null, progress: 0 } : q));
       window.dispatchEvent(new CustomEvent("studio-notify", {
         detail: { title: "Subtitles Downloaded", message: `${lang} subtitles saved.`, type: "success" }
       }));
@@ -290,8 +500,17 @@ export default function YouTubePanel() {
   };
 
   const downloadAll = async () => {
-    const ready = queue.filter(q => q.status === "ready" || q.status === "done");
-    for (const item of ready) await downloadItem(item.id);
+    const ready = queue.filter(q => q.status === "ready");
+    await Promise.allSettled(ready.map(item => downloadItem(item.id)));
+  };
+
+  const downloadSelectedHistory = async (items) => {
+    for (const item of items) {
+      await fetchInfo(item.url, {
+        autoDownload: true,
+        title: item.title,
+      });
+    }
   };
 
   const clearDone = () => setQueue(prev => prev.filter(q => q.status !== "done" && q.status !== "error"));
@@ -299,6 +518,8 @@ export default function YouTubePanel() {
 
   const readyCount = queue.filter(q => q.status === "ready").length;
   const downloadingCount = queue.filter(q => q.status === "downloading").length;
+  const activeVideoCount = queue.filter(q => q.status === "downloading" && q.downloadKind === "video").length;
+  const pausedCount = queue.filter(q => q.status === "paused").length;
   const doneCount = queue.filter(q => q.status === "done").length;
 
   return (
@@ -311,6 +532,9 @@ export default function YouTubePanel() {
             <h2 className="mt-1 text-2xl font-black italic tracking-tight text-zinc-900 dark:text-zinc-50">
               Video Grabber
             </h2>
+            <p className="mt-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
+              YouTube, Facebook, and Instagram links.
+            </p>
           </div>
 
           {/* Add URL input */}
@@ -329,7 +553,7 @@ export default function YouTubePanel() {
             <div className="space-y-3 relative transition-all duration-300">
               {!bulkMode ? (
                 <div className="relative flex items-center w-full">
-                  <input type="url" placeholder="Paste YouTube URL..."
+                  <input type="url" placeholder="Paste YouTube, Facebook, or Instagram URL..."
                     value={urlInput} onChange={e => setUrlInput(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && addSingleUrl()}
                     className="w-full pl-10 pr-12 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 transition-all focus:border-zinc-500 focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:focus:ring-white/5 font-medium shadow-inner-sm" />
@@ -340,7 +564,7 @@ export default function YouTubePanel() {
                   </button>
                 </div>
               ) : (
-                <textarea rows={5} placeholder="Paste multiple YouTube URLs here (newlines, commas, or spaces)..."
+                <textarea rows={5} placeholder="Paste multiple YouTube, Facebook, or Instagram URLs here..."
                   value={bulkText} onChange={e => setBulkText(e.target.value)}
                   className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 transition-all focus:border-zinc-500 focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:focus:ring-white/5 font-mono resize-none shadow-inner-sm min-h-[120px]" />
               )}
@@ -350,7 +574,7 @@ export default function YouTubePanel() {
                 const uniqueUrls = [...new Set(urls)];
                 const parsedUrls = uniqueUrls.map(url => ({
                   url,
-                  valid: isValidYoutubeUrl(url)
+                  valid: isSupportedVideoUrl(url)
                 }));
                 const validCount = parsedUrls.filter(p => p.valid).length;
                 const invalidUrls = parsedUrls.filter(p => !p.valid).map(p => p.url);
@@ -404,6 +628,16 @@ export default function YouTubePanel() {
                 onClick={downloadAll}>
                 {downloadingCount > 0 ? <><Loader2 size={18} className="mr-2 animate-spin"/> Downloading...</> : <><Download size={18} className="mr-2"/> Download All ({readyCount})</>}
               </Button>
+              {activeVideoCount > 0 && (
+                <Button variant="outline" size="md" className="w-full justify-center" onClick={pauseAllDownloads}>
+                  <Pause size={17} className="mr-2" /> Pause All ({activeVideoCount})
+                </Button>
+              )}
+              {activeVideoCount === 0 && pausedCount > 0 && (
+                <Button variant="primary" size="md" className="w-full justify-center" onClick={resumeAllDownloads}>
+                  <Play size={17} className="mr-2" /> Resume All ({pausedCount})
+                </Button>
+              )}
               {doneCount > 0 && (
                 <Button variant="ghost" size="sm" className="w-full justify-center" onClick={clearDone}>
                   <Trash2 size={16} className="mr-2" /> Clear Finished ({doneCount})
@@ -414,7 +648,12 @@ export default function YouTubePanel() {
         </Card>
 
         {/* History Section */}
-        <DownloadHistory history={history} clearHistory={clearHistory} onReDownload={addSingleUrl} />
+        <DownloadHistory
+          history={history}
+          clearHistory={clearHistory}
+          onReDownload={addSingleUrl}
+          onDownloadSelected={downloadSelectedHistory}
+        />
       </aside>
 
       {/* ── Right: Queue ─────────────────────────────────── */}
@@ -438,10 +677,10 @@ export default function YouTubePanel() {
                 No Videos Yet
               </p>
               <p className="text-xs text-zinc-500 font-medium uppercase tracking-widest">
-                Paste YouTube URLs to fetch metadata
+                Paste YouTube, Facebook, or Instagram links to fetch metadata
               </p>
               <p className="text-[10px] text-zinc-400 max-w-xs mx-auto">
-                Supports quality selection, trimming, playlists, and subtitles.
+                Supports quality selection, trimming, YouTube playlists, and subtitles when available.
               </p>
             </div>
           </div>
@@ -449,7 +688,8 @@ export default function YouTubePanel() {
           <div className="space-y-4 w-full">
             {queue.map(item => (
               <QueueItem key={item.id} item={item}
-                onRemove={removeItem} onUpdate={updateItem} onDownload={downloadItem} onDownloadSubtitles={downloadSubtitles} />
+                onRemove={removeItem} onUpdate={updateItem} onDownload={downloadItem}
+                onPause={pauseDownload} onResume={downloadItem} onDownloadSubtitles={downloadSubtitles} />
             ))}
           </div>
         )}
@@ -457,4 +697,3 @@ export default function YouTubePanel() {
     </main>
   );
 }
-

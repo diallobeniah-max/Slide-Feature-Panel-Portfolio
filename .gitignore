@@ -31,3 +31,8 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+.vercel
+.playwright-cli/
+release-*/
+public/ocr-test/
+public/ocr-test-runner.html

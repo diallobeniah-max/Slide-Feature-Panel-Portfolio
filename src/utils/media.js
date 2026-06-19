@@ -101,7 +101,7 @@ export function createAssetFromFile(file) {
   };
 }
 
-export function downloadBlob(blob, filename) {
+function triggerBrowserDownload(blob, filename) {
   const href = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = href;
@@ -110,6 +110,30 @@ export function downloadBlob(blob, filename) {
   link.click();
   link.remove();
   window.setTimeout(() => URL.revokeObjectURL(href), 1200);
+}
+
+export function downloadBlob(blob, filename, options = {}) {
+  if (!options.skipPreferredFolder && window.contentFlow?.desktop?.saveExportFile) {
+    blob.arrayBuffer()
+      .then((data) => window.contentFlow.desktop.saveExportFile("global", filename, data))
+      .then((result) => {
+        if (!result?.saved) triggerBrowserDownload(blob, filename);
+      })
+      .catch(() => triggerBrowserDownload(blob, filename));
+    return;
+  }
+
+  if (!options.skipPreferredFolder && typeof window.showDirectoryPicker === "function") {
+    import("./downloadFolders.js")
+      .then(({ saveBlobToPreferredFolder }) => saveBlobToPreferredFolder("global", filename, blob))
+      .then((saved) => {
+        if (!saved) triggerBrowserDownload(blob, filename);
+      })
+      .catch(() => triggerBrowserDownload(blob, filename));
+    return;
+  }
+
+  triggerBrowserDownload(blob, filename);
 }
 
 function wait(ms) {

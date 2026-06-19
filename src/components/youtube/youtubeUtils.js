@@ -15,14 +15,47 @@ export const formatBytes = (b) => {
   return `${(b / Math.pow(k, i)).toFixed(1)} ${s[i]}`;
 };
 
-export const isValidYoutubeUrl = (url) => {
+const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be']);
+const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'm.instagram.com']);
+const FACEBOOK_HOSTS = new Set(['facebook.com', 'www.facebook.com', 'm.facebook.com', 'mbasic.facebook.com', 'web.facebook.com', 'fb.watch', 'fb.com', 'www.fb.com', 'l.facebook.com', 'lm.facebook.com']);
+
+function parseUrl(url) {
   try {
     const u = new URL(url.trim());
-    return ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'].includes(u.hostname);
+    return u;
   } catch {
-    return false;
+    return null;
   }
+}
+
+export const isYoutubeUrl = (url) => {
+  const u = parseUrl(url);
+  return Boolean(u && YOUTUBE_HOSTS.has(u.hostname.toLowerCase()));
 };
+
+export const getVideoPlatform = (url) => {
+  const u = parseUrl(url);
+  if (!u) return null;
+  const host = u.hostname.toLowerCase();
+  if (YOUTUBE_HOSTS.has(host)) return 'youtube';
+  if (INSTAGRAM_HOSTS.has(host)) return 'instagram';
+  if (FACEBOOK_HOSTS.has(host)) return 'facebook';
+  return null;
+};
+
+export const getVideoPlatformLabel = (urlOrPlatform) => {
+  const platform = ['youtube', 'instagram', 'facebook'].includes(urlOrPlatform)
+    ? urlOrPlatform
+    : getVideoPlatform(urlOrPlatform);
+  if (platform === 'youtube') return 'YouTube';
+  if (platform === 'instagram') return 'Instagram';
+  if (platform === 'facebook') return 'Facebook';
+  return 'Video';
+};
+
+export const isSupportedVideoUrl = (url) => Boolean(getVideoPlatform(url));
+
+export const isValidYoutubeUrl = isYoutubeUrl;
 
 export const extractVideoId = (url) => {
   const m = url.match(/(?:v=|youtu\.be\/|shorts\/|live\/)([a-zA-Z0-9_-]{11})/);

@@ -1,7 +1,9 @@
 const fs = require("node:fs/promises");
 const crypto = require("node:crypto");
 const path = require("node:path");
+const { spawn } = require("node:child_process");
 const { pathToFileURL } = require("node:url");
+const { path7za } = require("7zip-bin");
 const express = require("express");
 const {
   app,
@@ -61,6 +63,7 @@ const assetPathById = new Map();
 const thumbnailMetaById = new Map();
 const thumbnailInflight = new Map();
 const thumbnailQueue = [];
+const archiveSessions = new Map();
 let activeThumbnailJobs = 0;
 const MAX_THUMBNAIL_JOBS = 2;
 let activeThumbnailWarm = null;
@@ -68,12 +71,25 @@ const isSmokeTest = process.env.CONTENTFLOW_ELECTRON_SMOKE === "1";
 const DEFAULT_DESKTOP_PREFS = {
   runOnStartup: false,
   backgroundMode: true,
+  downloadFolders: {
+    global: "",
+    videoGrabber: "",
+    instagram: "",
+    batch: "",
+    grid: "",
+    slicer: "",
+    spell: "",
+    writing: "",
+    tools: "",
+    useVideoGrabberForAll: false,
+    useGlobalForAll: true,
+  },
 };
 const DEFAULT_THEME_PREFS = {
   mode: "auto",
   isDark: true,
 };
-const PHONE_POPOUT_VERSION = 1;
+const PHONE_POPOUT_VERSION = 2;
 
 function getAppIconPath() {
   return path.join(__dirname, "assets", "icon.ico");
@@ -93,6 +109,10 @@ async function readDesktopPrefs() {
   return {
     ...DEFAULT_DESKTOP_PREFS,
     ...prefs,
+    downloadFolders: {
+      ...DEFAULT_DESKTOP_PREFS.downloadFolders,
+      ...(prefs.downloadFolders || {}),
+    },
     runOnStartup: Boolean(loginSettings.openAtLogin),
   };
 }
@@ -193,6 +213,10 @@ function getAssetsStorePath() {
   return path.join(app.getPath("userData"), "assets-store.json");
 }
 
+function getWriteStorePath() {
+  return path.join(app.getPath("userData"), "write-store.json");
+}
+
 async function readAssetsStore() {
   const store = await readJson(getAssetsStorePath(), {
     lastFolder: "",
@@ -210,6 +234,27 @@ async function readAssetsStore() {
 
 async function writeAssetsStore(nextStore) {
   await writeJson(getAssetsStorePath(), nextStore);
+}
+
+async function readWriteStore() {
+  const store = await readJson(getWriteStorePath(), {
+    folderPath: "",
+    currentId: "",
+    documents: [],
+  });
+  return {
+    folderPath: store.folderPath || "",
+    currentId: store.currentId || "",
+    documents: Array.isArray(store.documents) ? store.documents : [],
+  };
+}
+
+async function writeWriteStore(nextStore) {
+  await writeJson(getWriteStorePath(), {
+    folderPath: nextStore.folderPath || "",
+    currentId: nextStore.currentId || "",
+    documents: Array.isArray(nextStore.documents) ? nextStore.documents : [],
+  });
 }
 
 async function setLastAssetsFolder(folderPath) {
@@ -612,6 +657,59 @@ function getIndexedFilePaths(kind, ids = []) {
     .filter(Boolean);
 }
 
+function createWriteDocumentId() {
+  return crypto.randomBytes(8).toString("hex");
+}
+
+function sanitizeWriteFileName(value = "writing") {
+  const base = String(value || "writing")
+    .replace(/\.[^.]+$/, "")
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 56) || "writing";
+  return base;
+}
+
+function getWriteExcerpt(content = "") {
+  return String(content || "").replace(/\s+/g, " ").trim().slice(0, 120);
+}
+
+async function sanitizeWriteDocuments(documents = [], folderPath = "") {
+  const clean = [];
+  for (const doc of documents) {
+    if (!doc?.id || !doc?.path) continue;
+    if (folderPath && !path.resolve(doc.path).startsWith(path.resolve(folderPath))) continue;
+    try {
+      const stats = await fs.stat(doc.path);
+      if (!stats.isFile()) continue;
+      clean.push({
+        id: String(doc.id),
+        name: String(doc.name || path.basename(doc.path)).slice(0, 100),
+        path: doc.path,
+        updatedAt: doc.updatedAt || stats.mtime.toISOString(),
+        excerpt: String(doc.excerpt || "").slice(0, 160),
+      });
+    } catch {
+      // Skip missing autosave files.
+    }
+  }
+  return clean.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)));
+}
+
+async function getWriteState() {
+  const store = await readWriteStore();
+  const documents = await sanitizeWriteDocuments(store.documents, store.folderPath);
+  if (documents.length !== store.documents.length) {
+    await writeWriteStore({ ...store, documents });
+  }
+  return {
+    folderPath: store.folderPath,
+    currentId: store.currentId,
+    documents,
+  };
+}
+
 async function copyIndexedFiles(kind, ids = []) {
   const selected = getIndexedFilePaths(kind, ids);
   if (!selected.length) return { copied: 0, canceled: true };
@@ -803,8 +901,8 @@ function getToolWindowPath(tool) {
 
 async function getToolWindowBounds(tool) {
   const fallback = {
-    width: tool === "gallery" ? 430 : 410,
-    height: tool === "gallery" ? 780 : 760,
+    width: tool === "gallery" ? 480 : tool === "writing" ? 480 : 450,
+    height: tool === "gallery" ? 820 : tool === "writing" ? 820 : 780,
     alwaysOnTop: false,
     phonePopoutVersion: PHONE_POPOUT_VERSION,
   };
@@ -1126,6 +1224,136 @@ function setupCompanionIpc() {
     if (nextPrefs.backgroundMode) ensureTray();
     return readDesktopPrefs();
   });
+  ipcMain.handle("desktop:select-download-folder", async (event, key = "") => {
+    const cleanKey = String(key || "").replace(/[^a-zA-Z0-9]/g, "");
+    const allowedKeys = new Set(Object.keys(DEFAULT_DESKTOP_PREFS.downloadFolders).filter((name) => !name.startsWith("use")));
+    if (!allowedKeys.has(cleanKey)) throw new Error("Unknown download folder setting.");
+    const current = await readDesktopPrefs();
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender) || BrowserWindow.getFocusedWindow() || mainWindow;
+    const result = await dialog.showOpenDialog(ownerWindow, {
+      title: cleanKey === "global" ? "Choose default export folder" : cleanKey === "videoGrabber" ? "Choose Video Grabber folder" : "Choose download folder",
+      defaultPath: current.downloadFolders[cleanKey] || app.getPath("downloads"),
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || !result.filePaths?.[0]) return { canceled: true, ...(await readDesktopPrefs()) };
+    const folderPath = result.filePaths[0];
+    await fs.mkdir(folderPath, { recursive: true });
+    const nextPrefs = {
+      ...current,
+      downloadFolders: {
+        ...current.downloadFolders,
+        [cleanKey]: folderPath,
+      },
+    };
+    await writeDesktopPrefs(nextPrefs);
+    return { canceled: false, ...(await readDesktopPrefs()) };
+  });
+  ipcMain.handle("desktop:set-download-folders", async (_event, patch = {}) => {
+    const current = await readDesktopPrefs();
+    const nextFolders = {
+      ...current.downloadFolders,
+      ...(patch || {}),
+    };
+    const nextPrefs = { ...current, downloadFolders: nextFolders };
+    await writeDesktopPrefs(nextPrefs);
+    return readDesktopPrefs();
+  });
+  ipcMain.handle("desktop:save-export-file", async (_event, key = "", fileName = "", data) => {
+    const cleanKey = String(key || "").replace(/[^a-zA-Z0-9]/g, "");
+    const current = await readDesktopPrefs();
+    const folders = current.downloadFolders || {};
+    const folderPath = folders.useGlobalForAll && folders.global
+      ? folders.global
+      : folders[cleanKey] || folders.global || "";
+    if (!folderPath) return { saved: false, path: "" };
+    await fs.mkdir(folderPath, { recursive: true });
+    const cleanName = String(fileName || "export.bin")
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 180) || "export.bin";
+    const extension = path.extname(cleanName);
+    const stem = path.basename(cleanName, extension);
+    let targetPath = path.join(folderPath, cleanName);
+    for (let index = 2; index < 10000; index += 1) {
+      try {
+        await fs.access(targetPath);
+        targetPath = path.join(folderPath, `${stem} (${index})${extension}`);
+      } catch {
+        break;
+      }
+    }
+    await fs.writeFile(targetPath, Buffer.from(data));
+    return { saved: true, path: targetPath };
+  });
+  ipcMain.handle("desktop:archive-start", async (event, key = "tools", format = "zip", fileName = "tools-export") => {
+    const cleanFormat = format === "7z" ? "7z" : "zip";
+    const current = await readDesktopPrefs();
+    const folders = current.downloadFolders || {};
+    const folderPath = folders.useGlobalForAll && folders.global
+      ? folders.global
+      : folders[String(key || "tools")] || folders.global || app.getPath("downloads");
+    await fs.mkdir(folderPath, { recursive: true });
+    const cleanStem = String(fileName || "tools-export")
+      .replace(/\.[^.]+$/, "")
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 120) || "tools-export";
+    let archivePath = path.join(folderPath, `${cleanStem}.${cleanFormat}`);
+    for (let index = 2; index < 10000; index += 1) {
+      try {
+        await fs.access(archivePath);
+        archivePath = path.join(folderPath, `${cleanStem} (${index}).${cleanFormat}`);
+      } catch {
+        break;
+      }
+    }
+    const id = crypto.randomUUID();
+    const tempPath = path.join(app.getPath("temp"), `contentflow-archive-${id}`);
+    await fs.mkdir(tempPath, { recursive: true });
+    archiveSessions.set(id, { id, ownerId: event.sender.id, format: cleanFormat, archivePath, tempPath });
+    return { id, format: cleanFormat };
+  });
+  ipcMain.handle("desktop:archive-add", async (event, id = "", fileName = "", data) => {
+    const session = archiveSessions.get(String(id || ""));
+    if (!session || session.ownerId !== event.sender.id) throw new Error("Archive session is unavailable.");
+    const cleanName = String(fileName || "file.bin")
+      .replace(/[<>:"/\\|?*\x00-\x1f]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 180) || "file.bin";
+    await fs.writeFile(path.join(session.tempPath, cleanName), Buffer.from(data));
+    return { added: true };
+  });
+  ipcMain.handle("desktop:archive-finish", async (event, id = "", compression = 5) => {
+    const session = archiveSessions.get(String(id || ""));
+    if (!session || session.ownerId !== event.sender.id) throw new Error("Archive session is unavailable.");
+    const level = Math.max(0, Math.min(9, Number(compression) || 5));
+    try {
+      await new Promise((resolve, reject) => {
+        const child = spawn(path7za, ["a", `-t${session.format}`, session.archivePath, ".", `-mx=${level}`, "-y"], {
+          cwd: session.tempPath,
+          windowsHide: true,
+        });
+        let stderr = "";
+        child.stderr.on("data", (chunk) => { stderr += chunk.toString(); });
+        child.on("error", reject);
+        child.on("close", (code) => code === 0 ? resolve() : reject(new Error(stderr || `7-Zip exited with code ${code}.`)));
+      });
+      return { saved: true, path: session.archivePath };
+    } finally {
+      archiveSessions.delete(session.id);
+      await fs.rm(session.tempPath, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+  ipcMain.handle("desktop:archive-cancel", async (event, id = "") => {
+    const session = archiveSessions.get(String(id || ""));
+    if (!session || session.ownerId !== event.sender.id) return { canceled: false };
+    archiveSessions.delete(session.id);
+    await fs.rm(session.tempPath, { recursive: true, force: true }).catch(() => {});
+    return { canceled: true };
+  });
 }
 
 function setupGalleryIpc() {
@@ -1335,13 +1563,19 @@ function setupGalleryIpc() {
 
   ipcMain.handle("files:copy-selected", (_event, kind, ids = []) => copyIndexedFiles(kind, ids));
 
+  const createDragIcon = (filePath) => {
+    const thumbnail = nativeImage.createFromPath(filePath || "");
+    if (!thumbnail.isEmpty()) return thumbnail.resize({ width: 72, height: 72 });
+    return nativeImage.createEmpty();
+  };
+
   ipcMain.handle("files:start-drag", (event, kind, ids) => {
     const filePaths = getIndexedFilePaths(kind, ids);
     if (!filePaths.length) return { dragging: false };
     event.sender.startDrag({
       file: filePaths[0],
       files: filePaths,
-      icon: nativeImage.createEmpty(),
+      icon: createDragIcon(filePaths[0]),
     });
     return { dragging: true, count: filePaths.length };
   });
@@ -1352,7 +1586,7 @@ function setupGalleryIpc() {
     event.sender.startDrag({
       file: filePaths[0],
       files: filePaths,
-      icon: nativeImage.createEmpty(),
+      icon: createDragIcon(filePaths[0]),
     });
   });
 
@@ -1627,6 +1861,80 @@ function setupDiagnosticsIpc() {
   });
 }
 
+function setupWriteIpc() {
+  ipcMain.handle("write:get-state", () => getWriteState());
+
+  ipcMain.handle("write:select-folder", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: "Choose where ContentFlow saves writing",
+      properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || !result.filePaths?.[0]) {
+      return { canceled: true, ...(await getWriteState()) };
+    }
+
+    const store = await readWriteStore();
+    const folderPath = result.filePaths[0];
+    await fs.mkdir(folderPath, { recursive: true });
+    const nextStore = {
+      ...store,
+      folderPath,
+      documents: await sanitizeWriteDocuments(store.documents, folderPath),
+    };
+    await writeWriteStore(nextStore);
+    return { canceled: false, ...(await getWriteState()) };
+  });
+
+  ipcMain.handle("write:save-text", async (_event, payload = {}) => {
+    const content = String(payload.content || "");
+    const store = await readWriteStore();
+    if (!store.folderPath) return { needsFolder: true, ...(await getWriteState()) };
+
+    await fs.mkdir(store.folderPath, { recursive: true });
+    const now = new Date().toISOString();
+    const id = payload.id ? String(payload.id) : createWriteDocumentId();
+    const extension = String(payload.fileName || "").toLowerCase().endsWith(".txt") ? ".txt" : ".md";
+    const existing = store.documents.find((doc) => doc.id === id);
+    const baseName = existing
+      ? sanitizeWriteFileName(existing.name)
+      : `${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)} ${sanitizeWriteFileName(
+          payload.fileName || getWriteExcerpt(content) || "writing",
+        )}`;
+    const fileName = `${baseName}${extension}`;
+    const filePath = existing?.path || path.join(store.folderPath, fileName);
+    await fs.writeFile(filePath, content, "utf8");
+
+    const document = {
+      id,
+      name: path.basename(filePath),
+      path: filePath,
+      updatedAt: now,
+      excerpt: getWriteExcerpt(content),
+    };
+    const documents = [document, ...store.documents.filter((doc) => doc.id !== id)].slice(0, 200);
+    await writeWriteStore({
+      ...store,
+      currentId: id,
+      documents,
+    });
+    return { saved: true, currentId: id, ...(await getWriteState()) };
+  });
+
+  ipcMain.handle("write:load-text", async (_event, id) => {
+    const store = await readWriteStore();
+    const document = store.documents.find((doc) => doc.id === id);
+    if (!document?.path) return { found: false, ...(await getWriteState()) };
+    const content = await fs.readFile(document.path, "utf8");
+    await writeWriteStore({ ...store, currentId: document.id });
+    return {
+      found: true,
+      content,
+      document,
+      ...(await getWriteState()),
+    };
+  });
+}
+
 app.whenReady().then(async () => {
   configureLogger(app.getPath("userData"));
   const themePrefs = await readThemePrefs();
@@ -1642,6 +1950,7 @@ app.whenReady().then(async () => {
   setupCompanionIpc();
   setupGalleryIpc();
   setupAssetsIpc();
+  setupWriteIpc();
   setupDiagnosticsIpc();
   await checkOcrAssets();
   await createWindow();

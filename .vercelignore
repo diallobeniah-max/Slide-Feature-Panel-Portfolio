@@ -1,0 +1,14 @@
+.git/
+.codex/
+node_modules/
+dist/
+release/
+release-*/
+scratch/
+electron/
+build/
+public/ocr-test/
+public/ocr-test-runner.html
+eng.traineddata
+audit.js
+*.log

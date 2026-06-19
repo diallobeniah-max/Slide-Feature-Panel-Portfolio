@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { History, Download, ExternalLink, Video, RefreshCw, Play } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { History, Download, ExternalLink, Video, RefreshCw, Play, ChevronDown, ChevronUp, CheckSquare, Square } from 'lucide-react';
 import { Card } from '../ui';
 import { formatTime, extractVideoId } from './youtubeUtils';
 
@@ -14,31 +14,68 @@ function getThumbnailUrl(item) {
   return null;
 }
 
-export default function DownloadHistory({ history, clearHistory, onReDownload }) {
+export default function DownloadHistory({ history, clearHistory, onReDownload, onDownloadSelected }) {
+  const [open, setOpen] = useState(false);
   const [expandedId, setExpandedId] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const selectedItems = useMemo(
+    () => history.filter((item, index) => selectedIds.includes(item.id || String(index))),
+    [history, selectedIds],
+  );
 
   if (!history || history.length === 0) return null;
+
+  const toggleSelected = (id) => {
+    setSelectedIds((current) =>
+      current.includes(id) ? current.filter((value) => value !== id) : [...current, id],
+    );
+  };
+
+  const downloadSelected = () => {
+    if (!selectedItems.length) return;
+    onDownloadSelected?.(selectedItems);
+    setOpen(false);
+  };
 
   return (
     <Card className="p-0 overflow-hidden bg-white/50 dark:bg-zinc-900/30 border border-zinc-200 dark:border-zinc-800">
       <div className="p-5 pb-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-zinc-500">
+          <button
+            type="button"
+            onClick={() => setOpen((value) => !value)}
+            className="flex items-center gap-2 text-zinc-500 transition hover:text-zinc-900 dark:hover:text-white"
+          >
             <History size={14} className="opacity-70" />
             <h3 className="font-black text-[10px] uppercase tracking-widest">Recent Downloads</h3>
-          </div>
-          <button 
-            onClick={clearHistory} 
-            className="text-[9px] font-black uppercase tracking-widest text-zinc-400 hover:text-red-500 transition-colors"
-          >
-            Clear
+            {open ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
           </button>
+          <div className="flex items-center gap-2">
+            {open && (
+              <button
+                type="button"
+                disabled={!selectedItems.length}
+                onClick={downloadSelected}
+                className="rounded-lg bg-zinc-950 px-2 py-1 text-[9px] font-black uppercase tracking-widest text-white transition disabled:opacity-35 dark:bg-white dark:text-zinc-950"
+              >
+                Download {selectedItems.length || ""}
+              </button>
+            )}
+            <button
+              onClick={clearHistory}
+              className="text-[9px] font-black uppercase tracking-widest text-zinc-400 hover:text-red-500 transition-colors"
+            >
+              Clear
+            </button>
+          </div>
         </div>
       </div>
 
-      <div className="px-5 pb-5 space-y-2 max-h-[500px] overflow-y-auto custom-scrollbar">
+      {open && <div className="px-5 pb-5 space-y-2 max-h-[500px] overflow-y-auto custom-scrollbar">
         {history.map((h, i) => {
-          const isExpanded = expandedId === (h.id || i);
+          const itemId = h.id || String(i);
+          const isSelected = selectedIds.includes(itemId);
+          const isExpanded = expandedId === itemId;
           const thumbUrl = getThumbnailUrl(h);
 
           return (
@@ -48,8 +85,21 @@ export default function DownloadHistory({ history, clearHistory, onReDownload })
             >
               <div 
                 className="flex gap-3 items-center p-2.5 cursor-pointer group"
-                onClick={() => setExpandedId(isExpanded ? null : (h.id || i))}
+                onClick={() => setExpandedId(isExpanded ? null : itemId)}
               >
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); toggleSelected(itemId); }}
+                  className={`grid h-8 w-8 shrink-0 place-items-center rounded-xl transition-colors ${
+                    isSelected
+                      ? "text-zinc-950 dark:text-white"
+                      : "text-zinc-400 hover:bg-white dark:hover:bg-zinc-700"
+                  }`}
+                  aria-label={isSelected ? "Remove from selected downloads" : "Select recent download"}
+                  title={isSelected ? "Selected" : "Select"}
+                >
+                  {isSelected ? <CheckSquare size={15} /> : <Square size={15} />}
+                </button>
                 {/* Thumbnail */}
                 <div className="relative w-[72px] h-[42px] shrink-0 overflow-hidden rounded-lg bg-zinc-200 dark:bg-zinc-700">
                   {thumbUrl ? (
@@ -124,7 +174,7 @@ export default function DownloadHistory({ history, clearHistory, onReDownload })
             </div>
           );
         })}
-      </div>
+      </div>}
     </Card>
   );
 }

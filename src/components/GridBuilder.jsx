@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Download, FileImage, Layers, RotateCcw } from "lucide-react";
 import { downloadBlob } from "../utils/media.js";
 import { Button, Card, Input, RangeSlider } from "./ui.jsx";
@@ -13,9 +13,10 @@ const notify = (title, message, type = "success") =>
   );
 
 const iconProps = { strokeWidth: 1.75 };
+const GridActionRecorder = lazy(() => import("./GridActionRecorder.jsx"));
 
 export default function GridBuilder() {
-  const [activeTab, setActiveTab] = useState("builder"); // "builder" | "presets"
+  const [activeTab, setActiveTab] = useState("builder"); // "builder" | "presets" | "actions"
   /* ── Canvas config ────────────────────────────────────────────── */
   const [slideWidth, setSlideWidth] = useState(1080);
   const [slideHeight, setSlideHeight] = useState(1080);
@@ -263,37 +264,57 @@ export default function GridBuilder() {
     );
   };
 
+  const TabButton = ({ value, children }) => (
+    <button
+      type="button"
+      onClick={() => setActiveTab(value)}
+      className={`flex-1 rounded-[10px] py-2.5 text-[10px] font-black uppercase tracking-[0.12em] transition-all duration-300 ${
+        activeTab === value
+          ? "scale-[1.02] bg-white text-zinc-900 shadow-[0_4px_12px_rgba(0,0,0,0.1)] dark:bg-zinc-700 dark:text-zinc-50 dark:shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
+          : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+      }`}
+    >
+      {children}
+    </button>
+  );
+
+  const GridTabBar = () => (
+    <div className="mx-auto w-full max-w-7xl px-5 pt-6">
+      <Card className="p-2">
+        <div className="flex gap-1 rounded-[14px] bg-zinc-100 p-1 dark:bg-zinc-800/50">
+          <TabButton value="builder">Grid Builder</TabButton>
+          <TabButton value="presets">Presets</TabButton>
+          <TabButton value="actions">Action Recorder</TabButton>
+        </div>
+      </Card>
+    </div>
+  );
+
+  if (activeTab === "actions") {
+    return (
+      <>
+        <GridTabBar />
+        <Suspense
+          fallback={
+            <main className="mx-auto max-w-7xl px-5 py-6">
+              <Card className="p-5 text-sm font-bold text-zinc-500">Loading Action Recorder...</Card>
+            </main>
+          }
+        >
+          <GridActionRecorder />
+        </Suspense>
+      </>
+    );
+  }
+
   /* ── Render ───────────────────────────────────────────────────── */
   return (
-    <main className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[22em_1fr] items-start">
+    <>
+      <GridTabBar />
+      <main className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[22em_1fr] items-start">
       {/* ── Sidebar ───────────────────────────────────────────────── */}
       <aside className="grid content-start gap-5 panel-enter-aside">
         <Card className="p-0 overflow-hidden flex flex-col">
-          <div className="p-2 border-b border-zinc-200 dark:border-zinc-800/50 bg-zinc-50 dark:bg-zinc-950/20">
-            <div className="flex bg-zinc-100 dark:bg-zinc-800/50 p-1 rounded-[14px] gap-1">
-              <button
-                onClick={() => setActiveTab("builder")}
-                className={`flex-1 text-[10px] py-2.5 rounded-[10px] font-black uppercase tracking-[0.12em] transition-all duration-300 ${
-                  activeTab === "builder"
-                    ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50 shadow-[0_4px_12px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.3)] scale-[1.02]"
-                    : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-                }`}
-              >
-                Grid Builder
-              </button>
-              <button
-                onClick={() => setActiveTab("presets")}
-                className={`flex-1 text-[10px] py-2.5 rounded-[10px] font-black uppercase tracking-[0.12em] transition-all duration-300 ${
-                  activeTab === "presets"
-                    ? "bg-white dark:bg-zinc-700 text-zinc-900 dark:text-zinc-50 shadow-[0_4px_12px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_12px_rgba(0,0,0,0.3)] scale-[1.02]"
-                    : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-                }`}
-              >
-                Presets
-              </button>
-            </div>
-          </div>
-
           <div className="p-5">
             <div className={`flex flex-col gap-4 ${activeTab === "presets" ? "block" : "hidden"}`}>
               <div className="flex items-center justify-between">
@@ -570,7 +591,7 @@ export default function GridBuilder() {
           </div>
         </Card>
       </section>
-    </main>
+      </main>
+    </>
   );
 }
-

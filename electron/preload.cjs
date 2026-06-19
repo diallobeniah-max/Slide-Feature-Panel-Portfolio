@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webUtils } = require("electron");
 
 function onIpc(channel, callback) {
   if (typeof callback !== "function") return () => {};
@@ -41,6 +41,7 @@ const files = {
   reveal: (kind, id) => ipcRenderer.invoke("files:reveal", kind, id),
   copySelected: (kind, ids) => ipcRenderer.invoke("files:copy-selected", kind, Array.isArray(ids) ? ids : []),
   startDrag: (kind, ids) => ipcRenderer.send("files:start-drag", kind, Array.isArray(ids) ? ids : [ids]),
+  getDroppedFilePath: (file) => webUtils.getPathForFile(file),
 };
 
 const assets = {
@@ -72,6 +73,17 @@ const desktop = {
   getPreferences: () => ipcRenderer.invoke("desktop:get-preferences"),
   setRunOnStartup: (enabled) => ipcRenderer.invoke("desktop:set-run-on-startup", Boolean(enabled)),
   setBackgroundMode: (enabled) => ipcRenderer.invoke("desktop:set-background-mode", Boolean(enabled)),
+  selectDownloadFolder: (key) => ipcRenderer.invoke("desktop:select-download-folder", String(key || "")),
+  setDownloadFolders: (patch) => ipcRenderer.invoke("desktop:set-download-folders", patch || {}),
+  saveExportFile: (key, fileName, data) =>
+    ipcRenderer.invoke("desktop:save-export-file", String(key || ""), String(fileName || ""), data),
+  startArchive: (key, format, fileName) =>
+    ipcRenderer.invoke("desktop:archive-start", String(key || "tools"), String(format || "zip"), String(fileName || "tools-export")),
+  addArchiveFile: (id, fileName, data) =>
+    ipcRenderer.invoke("desktop:archive-add", String(id || ""), String(fileName || ""), data),
+  finishArchive: (id, compression) =>
+    ipcRenderer.invoke("desktop:archive-finish", String(id || ""), Number(compression) || 5),
+  cancelArchive: (id) => ipcRenderer.invoke("desktop:archive-cancel", String(id || "")),
 };
 
 const windows = {
@@ -94,6 +106,18 @@ const appState = {
     ipcRenderer.invoke("app:set-unsaved-state", Boolean(hasUnsaved), String(source || "")),
 };
 
+const write = {
+  getState: () => ipcRenderer.invoke("write:get-state"),
+  selectFolder: () => ipcRenderer.invoke("write:select-folder"),
+  saveText: (payload) =>
+    ipcRenderer.invoke("write:save-text", {
+      id: payload?.id || "",
+      content: String(payload?.content || ""),
+      fileName: String(payload?.fileName || ""),
+    }),
+  loadText: (id) => ipcRenderer.invoke("write:load-text", String(id || "")),
+};
+
 contextBridge.exposeInMainWorld("contentFlow", {
   platform: {
     isElectron: true,
@@ -107,6 +131,7 @@ contextBridge.exposeInMainWorld("contentFlow", {
   theme,
   desktop,
   appState,
+  write,
   updates,
   files,
   assets,

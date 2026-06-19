@@ -297,7 +297,7 @@ export default function GalleryHome({
         <HeroMosaic items={recentItems} onOpenItem={onOpenItem} />
       </div>
 
-      <Section title="Recent" count={recentItems.length}>
+      <Section title="Recent" count={recentItems.length} defaultOpen={false}>
         {recentItems.map((item) => (
           <CollectionCard
             key={item.id}

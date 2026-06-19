@@ -1,20 +1,32 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
+  Brush,
+  Check,
   ChevronLeft,
   ChevronRight,
   Copy,
+  Crop,
+  Eraser,
   ExternalLink,
   Film,
   FolderOpen,
+  Hand,
   Image as ImageIcon,
   Maximize,
   Minimize,
+  MousePointer2,
+  Palette,
+  PenTool,
+  Redo2,
+  Square,
+  TextCursorInput,
+  Undo2,
   ZoomIn,
   ZoomOut,
   X,
 } from "lucide-react";
-import { Badge, Button } from "../ui.jsx";
+import { Badge, Button, RangeSlider } from "../ui.jsx";
 import { formatBytes } from "../../utils/media.js";
 import { formatMediaDate } from "../../utils/galleryGrouping.js";
 import { formatShortPath, isImageMedia, isVideoMedia } from "../../utils/mediaTypes.js";
@@ -56,6 +68,38 @@ function getPreviewUrl(item) {
   return item?.thumbnailUrl || item?.url || "";
 }
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function getPointerPercent(event) {
+  const rect = event.currentTarget.getBoundingClientRect();
+  return {
+    x: clamp(((event.clientX - rect.left) / rect.width) * 100, 0, 100),
+    y: clamp(((event.clientY - rect.top) / rect.height) * 100, 0, 100),
+  };
+}
+
+function normalizeBox(start, end) {
+  const x = Math.min(start.x, end.x);
+  const y = Math.min(start.y, end.y);
+  return {
+    x,
+    y,
+    width: Math.max(1, Math.abs(end.x - start.x)),
+    height: Math.max(1, Math.abs(end.y - start.y)),
+  };
+}
+
+function boxStyle(box) {
+  return {
+    left: `${box.x}%`,
+    top: `${box.y}%`,
+    width: `${box.width}%`,
+    height: `${box.height}%`,
+  };
+}
+
 export default function GalleryViewer({
   items,
   index,
@@ -67,7 +111,22 @@ export default function GalleryViewer({
   const item = items[index];
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [showZoomSlider, setShowZoomSlider] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [editTool, setEditTool] = useState("select");
+  const [editColor, setEditColor] = useState("#ffffff");
+  const [annotationsById, setAnnotationsById] = useState({});
+  const [cropById, setCropById] = useState({});
+  const [pendingCropById, setPendingCropById] = useState({});
+  const [editHistoryById, setEditHistoryById] = useState({});
+  const [editRedoById, setEditRedoById] = useState({});
+  const [draftEdit, setDraftEdit] = useState(null);
   const [mediaSizeById, setMediaSizeById] = useState({});
+  const zoomHoldTimerRef = useRef(null);
+  const panStartRef = useRef(null);
+  const draftEditRef = useRef(null);
   const isVideo = isVideoMedia(item);
   const canPreviewImage =
     isImageMedia(item) && !["tif", "tiff", "svg"].includes(String(item?.extension || "").toLowerCase());
@@ -78,6 +137,16 @@ export default function GalleryViewer({
   const sizeLabel =
     activeSize.width && activeSize.height ? `${activeSize.width} x ${activeSize.height}` : "Original media";
   const fullPath = item?.path || [item?.folderPath, item?.name].filter(Boolean).join("\\");
+  const activeAnnotations = annotationsById[item?.id] || [];
+  const activeCrop = cropById[item?.id] || null;
+  const pendingCrop = pendingCropById[item?.id] || null;
+  const cropPreview = pendingCrop;
+  const activeHistory = editHistoryById[item?.id] || [];
+  const activeRedo = editRedoById[item?.id] || [];
+  const canPanImage = canPreviewImage && zoom > 1 && !editorOpen;
+  const transformStyle = {
+    transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
+  };
 
   const limitedThumbnails = useMemo(() => {
     const start = Math.max(0, Math.min(index - 8, items.length - 16));
@@ -89,7 +158,21 @@ export default function GalleryViewer({
 
   useEffect(() => {
     setZoom(1);
+    setPan({ x: 0, y: 0 });
+    setIsPanning(false);
+    setShowZoomSlider(false);
+    setEditorOpen(false);
+    setEditTool("select");
+    setDraft(null);
   }, [item?.id]);
+
+  useEffect(() => {
+    if (zoom <= 1) setPan({ x: 0, y: 0 });
+  }, [zoom]);
+
+  useEffect(() => {
+    return () => window.clearTimeout(zoomHoldTimerRef.current);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = (event) => {
@@ -124,6 +207,253 @@ export default function GalleryViewer({
     }));
   };
 
+  const setDraft = (nextDraft) => {
+    draftEditRef.current = nextDraft;
+    setDraftEdit(nextDraft);
+  };
+
+  const getEditSnapshot = () => ({
+    annotations: activeAnnotations,
+    crop: activeCrop,
+  });
+
+  const pushEditHistory = () => {
+    const snapshot = getEditSnapshot();
+    setEditHistoryById((current) => ({
+      ...current,
+      [item.id]: [...(current[item.id] || []), snapshot].slice(-60),
+    }));
+    setEditRedoById((current) => ({ ...current, [item.id]: [] }));
+  };
+
+  const restoreEditSnapshot = (snapshot) => {
+    setAnnotationsById((current) => ({
+      ...current,
+      [item.id]: snapshot?.annotations || [],
+    }));
+    setCropById((current) => {
+      const next = { ...current };
+      if (snapshot?.crop) next[item.id] = snapshot.crop;
+      else delete next[item.id];
+      return next;
+    });
+    setPendingCropById((current) => {
+      const next = { ...current };
+      delete next[item.id];
+      return next;
+    });
+    setDraft(null);
+  };
+
+  const changeZoom = (delta) => {
+    setZoom((value) => clamp(Number((value + delta).toFixed(2)), 0.5, 3));
+  };
+
+  const startZoomHold = () => {
+    window.clearTimeout(zoomHoldTimerRef.current);
+    zoomHoldTimerRef.current = window.setTimeout(() => setShowZoomSlider(true), 320);
+  };
+
+  const endZoomHold = () => {
+    window.clearTimeout(zoomHoldTimerRef.current);
+  };
+
+  const updateCrop = (nextCrop) => {
+    pushEditHistory();
+    setCropById((current) => ({
+      ...current,
+      [item.id]: nextCrop,
+    }));
+  };
+
+  const addAnnotation = (annotation) => {
+    pushEditHistory();
+    setAnnotationsById((current) => ({
+      ...current,
+      [item.id]: [...(current[item.id] || []), { id: `${Date.now()}-${Math.random()}`, ...annotation }],
+    }));
+  };
+
+  const undoEdit = () => {
+    if (!activeHistory.length) return;
+    const previous = activeHistory[activeHistory.length - 1];
+    setEditHistoryById((current) => ({
+      ...current,
+      [item.id]: (current[item.id] || []).slice(0, -1),
+    }));
+    setEditRedoById((current) => ({
+      ...current,
+      [item.id]: [getEditSnapshot(), ...(current[item.id] || [])].slice(0, 60),
+    }));
+    restoreEditSnapshot(previous);
+  };
+
+  const redoEdit = () => {
+    if (!activeRedo.length) return;
+    const nextSnapshot = activeRedo[0];
+    setEditRedoById((current) => ({
+      ...current,
+      [item.id]: (current[item.id] || []).slice(1),
+    }));
+    setEditHistoryById((current) => ({
+      ...current,
+      [item.id]: [...(current[item.id] || []), getEditSnapshot()].slice(-60),
+    }));
+    restoreEditSnapshot(nextSnapshot);
+  };
+
+  const applyEdit = () => {
+    if (pendingCrop) updateCrop(pendingCrop);
+    setPendingCropById((current) => {
+      const next = { ...current };
+      delete next[item.id];
+      return next;
+    });
+    setDraft(null);
+  };
+
+  const clearEdits = () => {
+    if (!activeAnnotations.length && !activeCrop && !pendingCrop) return;
+    pushEditHistory();
+    setAnnotationsById((current) => ({ ...current, [item.id]: [] }));
+    setCropById((current) => {
+      const next = { ...current };
+      delete next[item.id];
+      return next;
+    });
+    setPendingCropById((current) => {
+      const next = { ...current };
+      delete next[item.id];
+      return next;
+    });
+    setDraft(null);
+  };
+
+  const handlePreviewPointerDown = (event) => {
+    if (!canPanImage || event.button !== 0) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    setIsPanning(true);
+    panStartRef.current = {
+      clientX: event.clientX,
+      clientY: event.clientY,
+      pan,
+    };
+  };
+
+  const handlePreviewPointerMove = (event) => {
+    if (!isPanning || !panStartRef.current) return;
+    const start = panStartRef.current;
+    setPan({
+      x: start.pan.x + event.clientX - start.clientX,
+      y: start.pan.y + event.clientY - start.clientY,
+    });
+  };
+
+  const endPreviewPointer = () => {
+    setIsPanning(false);
+    panStartRef.current = null;
+  };
+
+  const handleEditorPointerDown = (event) => {
+    if (!editorOpen || !canPreviewImage || editTool === "select" || event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const point = getPointerPercent(event);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+
+    if (editTool === "text") {
+      const text = window.prompt("Add text");
+      if (text?.trim()) addAnnotation({ type: "text", text: text.trim(), x: point.x, y: point.y, color: editColor });
+      return;
+    }
+
+    if (editTool === "pen") {
+      setDraft({ type: "pen", points: [point], color: editColor });
+      return;
+    }
+
+    if (editTool === "shape" || editTool === "crop") {
+      setDraft({ type: editTool, start: point, end: point, color: editColor });
+    }
+  };
+
+  const handleEditorPointerMove = (event) => {
+    const currentDraft = draftEditRef.current;
+    if (!currentDraft) return;
+    event.preventDefault();
+    const point = getPointerPercent(event);
+    if (currentDraft.type === "pen") {
+      setDraft({
+        ...currentDraft,
+        points: [...(currentDraft.points || []), point],
+      });
+      return;
+    }
+    setDraft({ ...currentDraft, end: point });
+  };
+
+  const handleEditorPointerUp = () => {
+    const currentDraft = draftEditRef.current;
+    if (!currentDraft) return;
+    if (currentDraft.type === "pen" && currentDraft.points?.length > 1) {
+      addAnnotation({ type: "pen", points: currentDraft.points, color: currentDraft.color });
+    }
+    if (currentDraft.type === "shape") {
+      addAnnotation({ type: "shape", box: normalizeBox(currentDraft.start, currentDraft.end), color: currentDraft.color });
+    }
+    if (currentDraft.type === "crop") {
+      setPendingCropById((current) => ({
+        ...current,
+        [item.id]: normalizeBox(currentDraft.start, currentDraft.end),
+      }));
+    }
+    setDraft(null);
+  };
+
+  const renderAnnotation = (annotation) => {
+    if (annotation.type === "text") {
+      return (
+        <div
+          key={annotation.id}
+          className="absolute -translate-y-1/2 rounded-lg bg-black/45 px-2 py-1 text-lg font-black shadow-lg backdrop-blur"
+          style={{ left: `${annotation.x}%`, top: `${annotation.y}%`, color: annotation.color }}
+        >
+          {annotation.text}
+        </div>
+      );
+    }
+    if (annotation.type === "shape") {
+      return (
+        <div
+          key={annotation.id}
+          className="absolute rounded-lg border-4 bg-transparent"
+          style={{ ...boxStyle(annotation.box), borderColor: annotation.color }}
+        />
+      );
+    }
+    if (annotation.type === "pen") {
+      const points = annotation.points.map((point) => `${point.x},${point.y}`).join(" ");
+      return (
+        <svg key={annotation.id} className="absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <polyline points={points} fill="none" stroke={annotation.color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.2" />
+        </svg>
+      );
+    }
+    return null;
+  };
+
+  const draftBox = draftEdit?.start && draftEdit?.end ? normalizeBox(draftEdit.start, draftEdit.end) : null;
+  const draftPenPoints = draftEdit?.type === "pen" ? draftEdit.points.map((point) => `${point.x},${point.y}`).join(" ") : "";
+  const cropViewBox =
+    activeCrop && activeSize.width && activeSize.height
+      ? {
+          x: (activeCrop.x / 100) * activeSize.width,
+          y: (activeCrop.y / 100) * activeSize.height,
+          width: Math.max(1, (activeCrop.width / 100) * activeSize.width),
+          height: Math.max(1, (activeCrop.height / 100) * activeSize.height),
+        }
+      : null;
+
   return createPortal(
     <div className={`fixed inset-0 z-[9999] flex items-center justify-center overflow-hidden ${isFullscreen ? "p-0" : "p-4 sm:p-8"}`}>
       <div className="absolute inset-0 bg-zinc-950/85 backdrop-blur-xl" onClick={onClose} />
@@ -151,25 +481,75 @@ export default function GalleryViewer({
               {String(index + 1).padStart(2, "0")} / {String(items.length).padStart(2, "0")}
             </Badge>
             {canPreviewImage && (
-              <>
+              <div className="relative flex items-center rounded-2xl border border-zinc-700 bg-zinc-950/70 p-1 shadow-inner">
                 <Button
                   icon={ZoomOut}
                   size="icon"
-                  variant="secondary"
-                  onClick={() => setZoom((value) => Math.max(0.5, Number((value - 0.25).toFixed(2))))}
+                  variant="ghost"
+                  onPointerDown={startZoomHold}
+                  onPointerUp={endZoomHold}
+                  onPointerLeave={endZoomHold}
+                  onClick={() => changeZoom(-0.25)}
                   aria-label="Zoom out"
                   title="Zoom out"
                 />
-                <Badge variant="default">{Math.round(zoom * 100)}%</Badge>
+                <button
+                  type="button"
+                  onClick={() => setShowZoomSlider((value) => !value)}
+                  className="min-w-14 rounded-xl px-2 py-2 text-center text-[10px] font-black uppercase tracking-widest text-zinc-200 transition hover:bg-white/10"
+                  aria-label="Show zoom slider"
+                  title="Show zoom slider"
+                >
+                  {Math.round(zoom * 100)}%
+                </button>
                 <Button
                   icon={ZoomIn}
                   size="icon"
-                  variant="secondary"
-                  onClick={() => setZoom((value) => Math.min(3, Number((value + 0.25).toFixed(2))))}
+                  variant="ghost"
+                  onPointerDown={startZoomHold}
+                  onPointerUp={endZoomHold}
+                  onPointerLeave={endZoomHold}
+                  onClick={() => changeZoom(0.25)}
                   aria-label="Zoom in"
                   title="Zoom in"
                 />
-              </>
+                {showZoomSlider && (
+                  <div className="absolute right-0 top-[calc(100%+0.6rem)] z-30 w-64 rounded-2xl border border-white/10 bg-zinc-950 p-4 shadow-2xl">
+                    <RangeSlider
+                      label="Zoom"
+                      min={50}
+                      max={300}
+                      step={5}
+                      value={Math.round(zoom * 100)}
+                      valueLabel={`${Math.round(zoom * 100)}%`}
+                      onChange={(event) => setZoom(clamp(Number(event.target.value) / 100, 0.5, 3))}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            {canPreviewImage && zoom > 1 && (
+              <Button
+                icon={Hand}
+                size="icon"
+                variant={canPanImage ? "primary" : "secondary"}
+                onClick={() => setEditorOpen(false)}
+                aria-label="Move zoomed image"
+                title="Move zoomed image"
+              />
+            )}
+            {canPreviewImage && (
+              <Button
+                icon={PenTool}
+                size="icon"
+                variant={editorOpen ? "primary" : "secondary"}
+                onClick={() => {
+                  setEditorOpen((value) => !value);
+                  setEditTool("select");
+                }}
+                aria-label="Open image editor"
+                title="Open image editor"
+              />
             )}
             <Button
               icon={isFullscreen ? Minimize : Maximize}
@@ -192,7 +572,14 @@ export default function GalleryViewer({
 
         <div className="grid min-h-0 flex-1 bg-zinc-950 lg:grid-cols-[minmax(0,1fr)_22rem]">
           <div
-            className="group/preview relative flex min-h-0 items-center justify-center overflow-hidden bg-black p-4"
+            className={`group/preview relative flex min-h-0 items-center justify-center overflow-hidden bg-black p-4 ${
+              canPanImage ? (isPanning ? "cursor-grabbing" : "cursor-grab") : ""
+            }`}
+            onPointerDown={handlePreviewPointerDown}
+            onPointerMove={handlePreviewPointerMove}
+            onPointerUp={endPreviewPointer}
+            onPointerCancel={endPreviewPointer}
+            onPointerLeave={endPreviewPointer}
           >
             {items.length > 1 && (
               <>
@@ -232,19 +619,82 @@ export default function GalleryViewer({
                 className="max-h-full max-w-full rounded-2xl bg-black object-contain shadow-2xl"
               />
             ) : canPreviewImage ? (
-              <img
-                key={item.id}
-                src={item.url}
-                alt={item.name}
-                decoding="async"
-                draggable={canDragIndexedFile()}
-                onDragStart={(event) => startIndexedFileDrag(event, sourceKind, item)}
-                onLoad={(event) =>
-                  rememberMediaSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
-                }
-                style={{ transform: `scale(${zoom})` }}
-                className="max-h-full max-w-full select-none rounded-2xl object-contain shadow-2xl"
-              />
+              <div className="relative max-h-full max-w-full select-none" style={transformStyle}>
+                {cropViewBox ? (
+                  <svg
+                    className="block max-h-[calc(100vh-18rem)] max-w-full rounded-2xl shadow-2xl"
+                    viewBox={`${cropViewBox.x} ${cropViewBox.y} ${cropViewBox.width} ${cropViewBox.height}`}
+                    style={{ aspectRatio: `${cropViewBox.width} / ${cropViewBox.height}`, height: "min(100%, calc(100vh - 18rem))" }}
+                    aria-label={item.name}
+                  >
+                    <image
+                      href={item.url}
+                      x="0"
+                      y="0"
+                      width={activeSize.width}
+                      height={activeSize.height}
+                      preserveAspectRatio="none"
+                    />
+                  </svg>
+                ) : (
+                  <img
+                    key={item.id}
+                    src={item.url}
+                    alt={item.name}
+                    decoding="async"
+                    draggable={canDragIndexedFile() && zoom <= 1 && !editorOpen}
+                    onDragStart={(event) => startIndexedFileDrag(event, sourceKind, item)}
+                    onLoad={(event) =>
+                      rememberMediaSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
+                    }
+                    className="block max-h-[calc(100vh-18rem)] max-w-full rounded-2xl object-contain shadow-2xl"
+                  />
+                )}
+                {cropViewBox && (
+                  <img
+                    src={item.url}
+                    alt=""
+                    decoding="async"
+                    className="pointer-events-none absolute h-px w-px opacity-0"
+                    onLoad={(event) =>
+                      rememberMediaSize(event.currentTarget.naturalWidth, event.currentTarget.naturalHeight)
+                    }
+                  />
+                )}
+                <div
+                  className="pointer-events-none absolute inset-0 overflow-hidden rounded-2xl"
+                >
+                  {activeAnnotations.map(renderAnnotation)}
+                </div>
+                {cropPreview && (
+                  <div className="pointer-events-none absolute inset-0 rounded-2xl bg-black/35">
+                    <div className="absolute rounded-xl border-2 border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.45)]" style={boxStyle(cropPreview)} />
+                  </div>
+                )}
+                {editorOpen && (
+                  <div
+                    className={`absolute inset-0 z-10 rounded-2xl ${
+                      editTool === "pen" ? "cursor-crosshair" : editTool !== "select" ? "cursor-cell" : "pointer-events-none"
+                    }`}
+                    onPointerDown={handleEditorPointerDown}
+                    onPointerMove={handleEditorPointerMove}
+                    onPointerUp={handleEditorPointerUp}
+                    onPointerCancel={() => setDraft(null)}
+                  >
+                    {draftBox && (
+                      <div
+                        className={`absolute rounded-xl border-2 ${draftEdit.type === "crop" ? "border-white shadow-[0_0_0_9999px_rgba(0,0,0,0.35)]" : ""}`}
+                        style={{ ...boxStyle(draftBox), borderColor: draftEdit.type === "shape" ? draftEdit.color : undefined }}
+                      />
+                    )}
+                    {draftPenPoints && (
+                      <svg className="absolute inset-0 h-full w-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+                        <polyline points={draftPenPoints} fill="none" stroke={draftEdit.color} strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.2" />
+                      </svg>
+                    )}
+                  </div>
+                )}
+              </div>
             ) : (
               <div className="max-w-md rounded-3xl border border-white/10 bg-white/5 p-8 text-center shadow-xl">
                 <p className="text-lg font-black italic">Preview not available</p>
@@ -257,6 +707,51 @@ export default function GalleryViewer({
             <div className="pointer-events-none absolute bottom-5 left-1/2 z-20 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-center text-xs font-black uppercase tracking-widest text-white opacity-0 shadow-2xl backdrop-blur-md transition duration-200 group-hover/preview:opacity-100">
               {aspectRatio}
             </div>
+
+            {canPreviewImage && zoom > 1 && !editorOpen && (
+              <div className="pointer-events-none absolute right-5 top-5 z-20 inline-flex items-center gap-2 rounded-full bg-black/70 px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white shadow-2xl backdrop-blur-md">
+                <Hand size={14} />
+                Move
+              </div>
+            )}
+
+            {editorOpen && canPreviewImage && (
+              <>
+                <div className="absolute left-1/2 top-4 z-30 flex -translate-x-1/2 flex-wrap items-center justify-center gap-2 rounded-3xl border border-white/10 bg-zinc-950/85 p-2 shadow-2xl backdrop-blur-xl">
+                  {[
+                    { value: "select", icon: MousePointer2, label: "Select" },
+                    { value: "crop", icon: Crop, label: "Crop" },
+                    { value: "text", icon: TextCursorInput, label: "Text" },
+                    { value: "shape", icon: Square, label: "Shape" },
+                    { value: "pen", icon: Brush, label: "Pen" },
+                  ].map((tool) => (
+                    <Button
+                      key={tool.value}
+                      icon={tool.icon}
+                      size="icon"
+                      variant={editTool === tool.value ? "primary" : "ghost"}
+                      onClick={() => setEditTool(tool.value)}
+                      aria-label={tool.label}
+                      title={tool.label}
+                    />
+                  ))}
+                  <label className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 text-white" title="Color">
+                    <Palette size={16} />
+                    <input
+                      type="color"
+                      value={editColor}
+                      onChange={(event) => setEditColor(event.target.value)}
+                      className="sr-only"
+                      aria-label="Editor color"
+                    />
+                  </label>
+                  <Button icon={Undo2} size="icon" variant="ghost" onClick={undoEdit} aria-label="Undo edit" title="Undo" />
+                  <Button icon={Redo2} size="icon" variant="ghost" onClick={redoEdit} aria-label="Redo edit" title="Redo" />
+                  <Button icon={Check} size="icon" variant="primary" onClick={applyEdit} aria-label="Apply edit" title="Apply" />
+                  <Button icon={Eraser} size="icon" variant="ghost" onClick={clearEdits} aria-label="Clear edits" title="Clear edits" />
+                </div>
+              </>
+            )}
           </div>
 
           <aside className="flex min-h-0 flex-col gap-4 overflow-y-auto border-t border-zinc-800 bg-zinc-900 p-5 lg:border-l lg:border-t-0">
