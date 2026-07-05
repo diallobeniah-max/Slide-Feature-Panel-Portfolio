@@ -4,16 +4,16 @@ This file defines the shared layout and visual standards for the Flow app and we
 
 ## Layout
 
-- Main page max-width: `1320px` / `82.5rem`
-- Page width rule: `width: min(100% - 64px, 1320px); margin-inline: auto`
-- Desktop page padding: `32px` left/right, `24px` top/bottom
-- Tablet page padding: `20px` left/right, `20px` top/bottom
-- Mobile page padding: `16px` left/right, `16px` top/bottom
+- Main page max-width: `1280px` / `80rem`
+- Page width rule: `width: min(100% - 48px, 1280px); margin-inline: auto`
+- Desktop page padding: `24px` left/right, `24px` top/bottom
+- Tablet page padding: `16px` left/right, `20px` top/bottom
+- Mobile page padding: `12px` left/right, `16px` top/bottom
 - Large content gap: `24px`
 - Standard panel gap: `20px`
 - Compact control gap: `8px`
 
-All pages should align to the same `1320px` content container on large displays. On tablets, pages keep the same centered container behavior with reduced side padding. On mobile, layouts collapse to one column with no horizontal overflow.
+All pages should align to the same `1280px` content container on large displays. On tablets, pages keep the same centered container behavior with reduced side padding. On mobile, layouts collapse to one column with no horizontal overflow.
 
 ## Typography
 
@@ -111,9 +111,9 @@ Dark mode:
 
 ## Responsive Rules
 
-- Desktop `>= 1280px`: use the `1320px` page container, two-column layouts where useful, and full action rows.
-- Tablet `768px - 1279px`: keep the same max-width rule, reduce page padding to `20px`, allow cards to stack if columns feel cramped.
-- Mobile `< 768px`: use `16px` page padding, single-column panels, horizontally scroll long nav rows, and keep buttons at least `48px` tall.
+- Desktop `>= 1280px`: use the `1280px` page container, two-column layouts where useful, and full action rows.
+- Tablet `768px - 1279px`: keep the same max-width rule, reduce page padding to `16px`, allow cards to stack if columns feel cramped.
+- Mobile `< 768px`: use `12px` page padding, single-column panels, horizontally scroll long nav rows, and keep buttons at least `48px` tall.
 - No page should rely on a custom horizontal width unless there is a clear fullscreen media or canvas reason.
 
 ## Motion

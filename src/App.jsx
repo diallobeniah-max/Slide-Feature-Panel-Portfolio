@@ -28,9 +28,20 @@ import {
   Palette,
   Pin,
   Wrench,
+  Search,
+  Keyboard,
+  Download,
+  SlidersHorizontal,
+  Globe2,
+  Network,
+  MessageSquare,
+  HelpCircle,
+  CornerDownLeft,
+  ArrowRight,
 } from "lucide-react";
-import { Activity, Suspense, lazy, memo, useEffect, useState, useRef, useCallback } from "react";
+import { Activity, Suspense, lazy, memo, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
+import Fuse from "fuse.js";
 import Notifications, { playChime } from "./components/Notifications.jsx";
 import UpdateCenter from "./components/UpdateCenter.jsx";
 import {
@@ -192,6 +203,214 @@ const DOWNLOAD_FOLDER_PANELS = [
   { key: "tools", label: "Tools" },
 ];
 
+const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "settings-general",
+    type: "settings",
+    title: "General",
+    subtitle: "Settings",
+    path: "Settings / General",
+    sectionId: "settings-tools",
+    icon: Settings,
+    description: "Review workspace panels, current app state, and the most common Flow settings.",
+    actions: ["Open panel list", "Switch workspace", "Review app version"],
+    keywords: ["general", "settings", "workspace", "panel", "home", "main", "seetings"],
+  },
+  {
+    id: "settings-appearance",
+    type: "settings",
+    title: "Appearance",
+    subtitle: "Settings",
+    path: "Settings / Appearance",
+    sectionId: "settings-appearance",
+    icon: Palette,
+    description: "Change color mode, pumpkin accents, and per-panel color styling.",
+    actions: ["Change theme", "Adjust panel colors", "Preview light and dark mode"],
+    keywords: ["appearance", "apprearance", "theme", "dark mode", "light mode", "color", "pumpkin", "accent", "ui"],
+  },
+  {
+    id: "settings-downloads",
+    type: "settings",
+    title: "Downloads",
+    subtitle: "Settings",
+    path: "Settings / Downloads",
+    sectionId: "settings-storage",
+    icon: Download,
+    description: "Control download and export folder behavior for Flow tools.",
+    actions: ["Open save locations", "Check Tube override", "Use global folder"],
+    keywords: ["download", "downlod", "downloads", "queue", "video", "file", "output", "complete", "exports"],
+  },
+  {
+    id: "settings-save-location",
+    type: "settings",
+    title: "Default Save Location",
+    subtitle: "Settings / Downloads",
+    path: "Settings / Downloads",
+    sectionId: "settings-storage",
+    highlightId: "settings-default-save-location",
+    icon: Folder,
+    description: "Configure the folder used across all tools when saving or exporting files.",
+    actions: ["Change default folder", "Reset to default", "View current save path"],
+    keywords: ["save", "folder", "path", "export", "download", "location", "locaton", "default folder", "files"],
+  },
+  {
+    id: "settings-quality-format",
+    type: "settings",
+    title: "Quality & Format",
+    subtitle: "Settings",
+    path: "Settings / Tools",
+    sectionId: "settings-tools",
+    icon: SlidersHorizontal,
+    description: "Review tools that control export quality, file formats, compression, and presets.",
+    actions: ["Open Tools", "Review Batch", "Review media presets"],
+    keywords: ["quality", "qalty", "format", "compression", "compress", "preset", "export", "jpg", "png", "mp4"],
+  },
+  {
+    id: "settings-advanced",
+    type: "settings",
+    title: "Advanced",
+    subtitle: "Settings",
+    path: "Settings / Advanced",
+    sectionId: "settings-tools",
+    icon: Cpu,
+    description: "Open diagnostics, app capabilities, and advanced workspace controls.",
+    actions: ["Copy diagnostics", "Check updates", "Review app build"],
+    keywords: ["advanced", "diagnostics", "developer", "app", "version", "performance"],
+  },
+  {
+    id: "settings-browser",
+    type: "settings",
+    title: "Browser",
+    subtitle: "Settings",
+    path: "Settings / Browser",
+    sectionId: "settings-display",
+    icon: Globe2,
+    description: "Review web and desktop behavior that affects browser-based workflows.",
+    actions: ["Open display settings", "Review navigation", "Check web mode"],
+    keywords: ["browser", "web", "chrome", "website", "app", "open"],
+  },
+  {
+    id: "settings-proxy-network",
+    type: "settings",
+    title: "Proxy & Network",
+    subtitle: "Settings",
+    path: "Settings / Network",
+    sectionId: "settings-tools",
+    icon: Network,
+    description: "Find network-related tools and diagnostics for online media workflows.",
+    actions: ["Open tools", "Check diagnostics", "Review downloads"],
+    keywords: ["proxy", "network", "internet", "connection", "download", "online"],
+  },
+  {
+    id: "settings-notifications",
+    type: "settings",
+    title: "Notifications",
+    subtitle: "Settings",
+    path: "Settings / Notifications",
+    sectionId: "settings-display",
+    icon: Bell,
+    description: "Control success, error, and app status feedback.",
+    actions: ["Toggle sound", "Toggle notifications", "Review feedback"],
+    keywords: ["notifications", "notifs", "sound", "alert", "toast", "message"],
+  },
+  {
+    id: "settings-shortcuts",
+    type: "settings",
+    title: "Shortcuts",
+    subtitle: "Settings",
+    path: "Settings / Shortcuts",
+    sectionId: "settings-display",
+    icon: Keyboard,
+    description: "Open keyboard and navigation controls, including command search.",
+    actions: ["Use Ctrl K", "Review navigation", "Open display settings"],
+    keywords: ["shortcuts", "keyboard", "hotkey", "ctrl", "command", "cmd", "keys"],
+  },
+  {
+    id: "settings-about",
+    type: "settings",
+    title: "About",
+    subtitle: "Settings",
+    path: "Settings / About",
+    sectionId: "settings-tools",
+    icon: Info,
+    description: "Review Flow version, build type, diagnostics, and update status.",
+    actions: ["Check updates", "Copy diagnostics", "Review version"],
+    keywords: ["about", "version", "update", "diagnostics", "flow"],
+  },
+];
+
+const TOOL_COMMAND_ITEMS = [
+  {
+    id: "tools-badge",
+    type: "tool",
+    title: "Tools > Badge",
+    subtitle: "Tools",
+    path: "Tools / Badge",
+    workspace: "tools",
+    toolSection: "badge",
+    icon: ShieldCheck,
+    description: "Open the Badge section for media import, preview, compression, and archive export.",
+    actions: ["Import files", "Import folder", "Export archive"],
+    keywords: ["tools", "badge", "media", "compress", "archive", "zip", "7z"],
+  },
+  {
+    id: "tools-assist",
+    type: "tool",
+    title: "Tools > Assist",
+    subtitle: "Tools",
+    path: "Tools / Assist",
+    workspace: "tools",
+    toolSection: "assist",
+    icon: WandSparkles,
+    description: "Open Assist for faster preparation and guidance around media workflows.",
+    actions: ["Prepare media", "Review presets", "Compare quality"],
+    keywords: ["tools", "assist", "assistant", "prepare", "help", "preset"],
+  },
+  {
+    id: "tools-batch",
+    type: "tool",
+    title: "Tools > Batch",
+    subtitle: "Tools",
+    path: "Tools / Batch",
+    workspace: "tools",
+    toolSection: "batch",
+    icon: Layers,
+    description: "Open Batch inside Tools without losing the original batch workflow.",
+    actions: ["Convert media", "Compress files", "Export selected"],
+    keywords: ["tools", "batch", "batc", "convert", "trim", "compress", "bulk"],
+  },
+];
+
+const NAV_COMMAND_ITEMS = WORKSPACE_TABS.map(({ value, label }) => ({
+  id: `go-${value}`,
+  type: "navigation",
+  title: `Go to ${label}`,
+  subtitle: "Navigation",
+  path: `Flow / ${label}`,
+  workspace: value,
+  icon: PANEL_ICON_MAP[value] || Layers,
+  description: PANEL_HELP[value] || `Open the ${label} workspace.`,
+  actions: ["Open workspace", "Keep current state", "Use shared layout"],
+  keywords: [label, value, "go", "open", "navigate", PANEL_HELP[value] || ""],
+}));
+
+const COMMAND_ITEMS = [
+  ...NAV_COMMAND_ITEMS,
+  {
+    id: "go-settings",
+    type: "navigation",
+    title: "Go to Settings",
+    subtitle: "Navigation",
+    path: "Flow / Settings",
+    icon: Settings,
+    description: "Open Flow settings, search sections, and adjust app preferences.",
+    actions: ["Open settings", "Search settings", "Change preferences"],
+    keywords: ["settings", "seetings", "preferences", "options", "gear"],
+  },
+  ...SETTINGS_SEARCH_ITEMS,
+  ...TOOL_COMMAND_ITEMS,
+];
+
 function getWriteCommandOrder() {
   try {
     const saved = JSON.parse(readStoredSetting(WRITE_COMMAND_ORDER_KEY, "[]") || "[]");
@@ -328,6 +547,166 @@ const WorkspaceActivity = memo(function WorkspaceActivity({ id, active, initialI
     </Activity>
   );
 });
+
+function CommandPalette({ open, onClose, onRunCommand }) {
+  const [query, setQuery] = useState("");
+  const [activeIndex, setActiveIndex] = useState(0);
+  const inputRef = useRef(null);
+  const fuse = useMemo(
+    () =>
+      new Fuse(COMMAND_ITEMS, {
+        keys: ["title", "subtitle", "path", "description", "keywords", "actions"],
+        threshold: 0.36,
+        ignoreLocation: true,
+        minMatchCharLength: 1,
+      }),
+    [],
+  );
+  const results = useMemo(() => {
+    const search = query.trim();
+    const items = search ? fuse.search(search).map((result) => result.item) : COMMAND_ITEMS;
+    return items.slice(0, 14);
+  }, [fuse, query]);
+  const selected = results[Math.min(activeIndex, Math.max(0, results.length - 1))] || results[0];
+
+  useEffect(() => {
+    if (!open) return;
+    setQuery("");
+    setActiveIndex(0);
+    const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 60);
+    return () => window.clearTimeout(focusTimer);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        setActiveIndex((current) => (current + 1) % Math.max(1, results.length));
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        setActiveIndex((current) => (current - 1 + Math.max(1, results.length)) % Math.max(1, results.length));
+        return;
+      }
+      if (event.key === "Enter" && selected) {
+        event.preventDefault();
+        onRunCommand(selected);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [open, onClose, onRunCommand, results.length, selected]);
+
+  useEffect(() => {
+    setActiveIndex(0);
+  }, [query]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="command-palette-backdrop" role="presentation">
+      <button type="button" className="command-palette-scrim" aria-label="Close command palette" onClick={onClose} />
+      <section className="command-palette-shell" role="dialog" aria-modal="true" aria-label="Command palette">
+        <div className="command-palette-search">
+          <Search size={22} />
+          <input
+            ref={inputRef}
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Type a command or search..."
+            aria-label="Search commands and settings"
+          />
+          <kbd>Esc</kbd>
+        </div>
+        <div className="command-palette-body">
+          <div className="command-results custom-scrollbar" role="listbox" aria-label="Command results">
+            {results.length ? (
+              results.map((item, index) => {
+                const Icon = item.icon || Settings;
+                const active = index === activeIndex;
+                const sectionLabel = item.type === "settings" ? "Settings" : item.type === "tool" ? "Tools" : "Navigation";
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    role="option"
+                    aria-selected={active}
+                    className={`command-result ${active ? "is-active" : ""}`}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => onRunCommand(item)}
+                  >
+                    <span className="command-result-icon">
+                      <Icon size={20} />
+                    </span>
+                    <span className="min-w-0">
+                      <strong>{item.title}</strong>
+                      <small>{sectionLabel} - {item.path}</small>
+                    </span>
+                    {(item.type === "settings" || item.type === "tool") && <kbd>Ctrl Enter</kbd>}
+                  </button>
+                );
+              })
+            ) : (
+              <div className="command-empty">
+                <Search size={22} />
+                <strong>No matching commands</strong>
+                <span>Try a page name, setting, folder, quality, batch, or gallery.</span>
+              </div>
+            )}
+          </div>
+          <aside className="command-preview" aria-live="polite">
+            {selected ? (
+              <>
+                <div className="command-preview-head">
+                  <span className="command-preview-icon">
+                    {(() => {
+                      const Icon = selected.icon || Settings;
+                      return <Icon size={24} />;
+                    })()}
+                  </span>
+                  <button type="button" onClick={() => onRunCommand(selected)} aria-label={`Open ${selected.title}`}>
+                    <ExternalLink size={18} />
+                  </button>
+                </div>
+                <p className="command-eyebrow">Quick look</p>
+                <h2>{selected.title.replace(/^Settings > /, "").replace(/^Tools > /, "")}</h2>
+                <p className="command-path">{selected.path}</p>
+                <div className="command-preview-card">
+                  <p className="command-preview-label">Preview</p>
+                  <p>{selected.description}</p>
+                </div>
+                <div className="command-action-list">
+                  {(selected.actions || ["Open"]).slice(0, 4).map((action) => (
+                    <button key={action} type="button" onClick={() => onRunCommand(selected)}>
+                      <span>{action}</span>
+                      <ArrowRight size={16} />
+                    </button>
+                  ))}
+                </div>
+                <button type="button" className="command-open-button" onClick={() => onRunCommand(selected)}>
+                  <CornerDownLeft size={17} />
+                  Open
+                </button>
+              </>
+            ) : null}
+          </aside>
+        </div>
+        <footer className="command-palette-footer">
+          <span>Use arrow keys to navigate</span>
+          <span>Flow v{APP_VERSION}</span>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
 
 function formatApproxBytes(bytes) {
   const value = Number(bytes || 0);
@@ -550,6 +929,7 @@ function SettingsPopover({
     window.flow?.desktop?.getPreferences ? null : getWebDownloadFolderPreferences(),
   );
   const [writeCommandOrder, setWriteCommandOrder] = useState(getWriteCommandOrder);
+  const [settingsSearch, setSettingsSearch] = useState("");
   const ref = useRef(null);
 
   const isElectron = Boolean(window.flow?.platform?.isElectron);
@@ -734,12 +1114,43 @@ function SettingsPopover({
     { id: "settings-storage", label: "Storage", icon: Folder },
     { id: "settings-tools", label: "Tools", icon: Wrench },
   ];
-  const openSettingSection = (id) => {
+  const settingsFuse = useMemo(
+    () =>
+      new Fuse(SETTINGS_SEARCH_ITEMS, {
+        keys: ["title", "subtitle", "path", "description", "keywords"],
+        threshold: 0.38,
+        ignoreLocation: true,
+        minMatchCharLength: 1,
+      }),
+    [],
+  );
+  const settingsResults = settingsSearch.trim()
+    ? settingsFuse.search(settingsSearch.trim()).map((result) => result.item).slice(0, 7)
+    : [];
+  const openSettingSection = (id, highlightId = id) => {
     const target = document.getElementById(id);
     if (!target) return;
     if (target.tagName === "DETAILS") target.open = true;
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => {
+      const highlightTarget = document.getElementById(highlightId) || target;
+      highlightTarget.scrollIntoView({ behavior: "smooth", block: "center" });
+      highlightTarget.classList.remove("settings-focus-glow");
+      void highlightTarget.offsetWidth;
+      highlightTarget.classList.add("settings-focus-glow");
+      window.setTimeout(() => highlightTarget.classList.remove("settings-focus-glow"), 1600);
+    }, 40);
   };
+
+  useEffect(() => {
+    const handleOpenSettingsSection = (event) => {
+      const { sectionId = "settings-tools", highlightId } = event.detail || {};
+      setIsClosing(false);
+      setOpen(true);
+      window.setTimeout(() => openSettingSection(sectionId, highlightId), 140);
+    };
+    window.addEventListener("flow-open-settings-section", handleOpenSettingsSection);
+    return () => window.removeEventListener("flow-open-settings-section", handleOpenSettingsSection);
+  }, []);
 
   const moveWriteCommand = (id, direction) => {
     setWriteCommandOrder((current) => {
@@ -871,6 +1282,40 @@ function SettingsPopover({
               <span className="hidden rounded-full bg-[var(--flow-soft)] px-3 py-1 text-[10px] font-black uppercase tracking-widest text-[var(--flow-muted)] sm:inline-flex">
                 {buildType}
               </span>
+            </section>
+
+            <section className="settings-search-panel" aria-label="Search settings">
+              <div className="settings-search-input">
+                <Search size={16} />
+                <input
+                  value={settingsSearch}
+                  onChange={(event) => setSettingsSearch(event.target.value)}
+                  placeholder="Search settings..."
+                  aria-label="Search settings"
+                />
+                <span>Ctrl K</span>
+              </div>
+              {settingsResults.length > 0 && (
+                <div className="settings-search-results">
+                  {settingsResults.map((item) => {
+                    const Icon = item.icon || Settings;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => openSettingSection(item.sectionId || "settings-tools", item.highlightId)}
+                      >
+                        <Icon size={15} />
+                        <span>
+                          <strong>{item.title}</strong>
+                          <small>{item.path}</small>
+                        </span>
+                        <ChevronRight size={14} />
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </section>
 
             <nav className="settings-quick-nav" aria-label="Settings sections">
@@ -1335,7 +1780,7 @@ function SettingsPopover({
                 <ChevronRight size={15} {...iconProps} className="transition group-open:rotate-90" />
               </summary>
               <div className="mt-4">
-              <div className="settings-save-card">
+              <div id="settings-default-save-location" className="settings-save-card">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-[10px] font-black uppercase tracking-widest text-[var(--flow-muted)]">Default Save Location</p>
@@ -1821,6 +2266,7 @@ export default function App() {
   const [panelAccents, setPanelAccents] = useState(getPanelAccents);
   const [navLayout, setNavLayout] = useState(getSavedNavLayout);
   const [showNavIcons, setShowNavIcons] = useState(getSavedNavShowIcons);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const canPopoutWorkspace = ["writing", "instagram", "gallery"].includes(workspace);
   const popoutAvailable = Boolean(window.flow?.windows?.openTool);
   const setPanelAccent = useCallback((panel, color) => {
@@ -1954,6 +2400,42 @@ export default function App() {
       return next;
     });
   };
+
+  const runCommand = useCallback((item) => {
+    if (!item) return;
+    setCommandPaletteOpen(false);
+    if (item.type === "settings" || item.id === "go-settings") {
+      window.dispatchEvent(
+        new CustomEvent("flow-open-settings-section", {
+          detail: {
+            sectionId: item.sectionId || "settings-tools",
+            highlightId: item.highlightId,
+          },
+        }),
+      );
+      return;
+    }
+    if (item.toolSection) {
+      sessionStorage.setItem("flow-tools-section", item.toolSection);
+      switchTab("tools");
+      window.setTimeout(() => {
+        window.dispatchEvent(new CustomEvent("flow-tools-section", { detail: { section: item.toolSection } }));
+      }, 60);
+      return;
+    }
+    if (item.workspace) switchTab(item.workspace);
+  }, [switchTab]);
+
+  useEffect(() => {
+    const handleCommandShortcut = (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setCommandPaletteOpen((current) => !current);
+      }
+    };
+    window.addEventListener("keydown", handleCommandShortcut);
+    return () => window.removeEventListener("keydown", handleCommandShortcut);
+  }, []);
 
   const renderPanelNavButton = ({ value, label }, variant = "horizontal") => {
     const accent = getPanelAccentValue(panelAccents, value, isDark);
@@ -2136,6 +2618,11 @@ export default function App() {
       </main>
 
       {/* ── Global notifications ──────────────────────────────── */}
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        onRunCommand={runCommand}
+      />
       <Notifications notifications={notifications} onDismiss={dismissNotif} />
       <UpdateCenter />
     </div>
