@@ -28,8 +28,8 @@
     --flow-faint: rgba(51, 22, 0, 0.42);
     --flow-shadow: rgba(102, 44, 0, 0.08);
     --flow-ring: rgba(255, 110, 0, 0.18);
-    --flow-page-max: 88rem;
-    --flow-page-padding-x: 1.5rem;
+    --flow-page-max: 82.5rem;
+    --flow-page-padding-x: 2rem;
     --flow-page-padding-y: 1.5rem;
     --flow-radius-hero: 28px;
     --flow-radius-card: 24px;
@@ -122,6 +122,11 @@ textarea {
     padding-block: var(--flow-page-padding-y);
 }
 
+.flow-nav-container {
+    width: min(100% - calc(var(--flow-page-padding-x) * 2), var(--flow-page-max));
+    margin-inline: auto;
+}
+
 .flow-panel {
     border: 1px solid var(--flow-border);
     border-radius: var(--flow-radius-card);
@@ -192,7 +197,7 @@ textarea {
     border-color: var(--flow-border);
     background: color-mix(in srgb, var(--flow-bg-elevated) 86%, transparent);
     box-shadow: 0 1px 0 rgba(255, 255, 255, 0.38) inset, 0 12px 36px var(--flow-shadow);
-    padding-block: 0.45rem;
+    padding-block: 0.55rem;
 }
 
 .pumpkin-nav {
@@ -202,7 +207,7 @@ textarea {
 }
 
 .flow-segmented-shell {
-    width: min(100%, var(--flow-page-max));
+    width: 100%;
     margin-inline: auto;
 }
 

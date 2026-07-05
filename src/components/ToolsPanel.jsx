@@ -479,7 +479,7 @@ export default function ToolsPanel() {
   }
 
   return (
-    <main className="flow-page grid max-w-[1280px] gap-4">
+    <main className="flow-page grid gap-4">
       <input ref={fileInputRef} type="file" accept="image/*,video/*" multiple className="hidden" onChange={(event) => { void addFiles(event.target.files, "files"); event.target.value = ""; }} />
       <input ref={folderInputRef} type="file" accept="image/*,video/*" multiple webkitdirectory="" directory="" className="hidden" onChange={(event) => { void addFiles(event.target.files, "folder files"); event.target.value = ""; }} />
       <div className="flow-segmented-shell tools-segmented-shell">

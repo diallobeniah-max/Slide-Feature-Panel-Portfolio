@@ -2035,7 +2035,7 @@ export default function App() {
         className="app-header sticky top-0 z-40 border-b backdrop-blur-xl backdrop-saturate-150 transition-[background-color,border-color,box-shadow] duration-300 ease-out"
       >
         <div
-          className="mx-auto flex h-14 max-w-[88rem] items-center justify-between gap-3 px-4"
+          className="flow-nav-container flex h-14 items-center justify-between gap-3"
         >
           {/* Logo */}
           <div className="flex items-center gap-3.5">
@@ -2078,7 +2078,7 @@ export default function App() {
 
         {/* Mobile tab bar */}
         <div
-          className="flex gap-1 overflow-x-auto border-t border-[var(--flow-border)] px-4 py-2 md:hidden"
+          className="flow-nav-container flex gap-1 overflow-x-auto border-t border-[var(--flow-border)] py-2 md:hidden"
         >
           {WORKSPACE_TABS.map(({ value, label }) => {
             const accent = getPanelAccentValue(panelAccents, value, isDark);
