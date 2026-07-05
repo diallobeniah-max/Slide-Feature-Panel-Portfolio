@@ -23,6 +23,7 @@ import {
   Pencil,
   Camera,
   TestTube2,
+  ChevronDown,
   ChevronRight,
   ExternalLink,
   Palette,
