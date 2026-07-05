@@ -30,7 +30,7 @@ function getSavedTubeDisplayMode() {
   }
 }
 
-export default function YouTubePanel() {
+export default function YouTubePanel({ embedded = false }) {
   const [queue, setQueue] = useState([]);
   const [urlInput, setUrlInput] = useState("");
   const [bulkMode, setBulkMode] = useState(false);
@@ -579,7 +579,7 @@ export default function YouTubePanel() {
   const doneCount = queue.filter(q => q.status === "done").length;
 
   return (
-    <main className="flow-page grid max-w-[1536px] gap-6 lg:grid-cols-[22em_1fr] items-start w-full">
+    <main className={`${embedded ? "grid" : "flow-page grid"} gap-6 lg:grid-cols-[20rem_minmax(0,1fr)] items-start w-full`}>
       {/* ── Left: Config ─────────────────────────────────── */}
       <aside className="grid content-start gap-5 panel-enter-aside w-full">
         <Card className="p-6 flex flex-col gap-6">
@@ -722,21 +722,26 @@ export default function YouTubePanel() {
             </h3>
           </div>
           {queue.length > 0 && (
-            <label className="group flex min-w-[14rem] cursor-pointer items-center gap-3 rounded-2xl border border-zinc-200 bg-white/80 px-3 py-2 shadow-sm transition hover:border-zinc-300 hover:shadow-md dark:border-white/10 dark:bg-[#252331]/85 dark:hover:border-white/20">
-              <ListVideo size={16} className="text-zinc-500 transition group-hover:text-zinc-900 dark:text-zinc-400 dark:group-hover:text-white" />
-              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
-                Display
+            <div className="tube-display-panel" aria-label="Tube display">
+              <span className="tube-display-label">
+                <ListVideo size={15} />
+                Tube Display
               </span>
-              <select
-                value={queueLayout}
-                onChange={(event) => setQueueLayout(event.target.value)}
-                className="ml-auto min-h-9 cursor-pointer rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-zinc-900 outline-none transition focus:border-zinc-400 focus:ring-4 focus:ring-zinc-950/5 dark:border-white/10 dark:bg-[#181622] dark:text-zinc-100 dark:focus:ring-white/10"
-              >
+              <div className="tube-display-options" role="radiogroup" aria-label="Download display mode">
                 {TUBE_DISPLAY_MODES.map(([value, label]) => (
-                  <option key={value} value={value}>{label}</option>
+                  <button
+                    key={value}
+                    type="button"
+                    role="radio"
+                    aria-checked={queueLayout === value}
+                    className={queueLayout === value ? "is-active" : ""}
+                    onClick={() => setQueueLayout(value)}
+                  >
+                    {label}
+                  </button>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
           )}
         </div>
 
@@ -772,7 +777,7 @@ export default function YouTubePanel() {
             </div>
           </div>
         ) : (
-          <div className={`grid w-full gap-4 ${queueLayout === "large" ? "sm:grid-cols-2" : ""} ${queueLayout === "compact" ? "gap-2" : ""}`}>
+          <div className={`tube-queue-list tube-queue-${queueLayout} grid w-full gap-4 ${queueLayout === "large" ? "sm:grid-cols-2" : ""} ${queueLayout === "compact" ? "gap-2" : ""}`}>
             {queue.map(item => (
               <QueueItem key={item.id} item={item}
                 onRemove={removeItem} onUpdate={updateItem} onDownload={downloadItem}

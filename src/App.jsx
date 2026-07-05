@@ -47,6 +47,7 @@ import {
   Package,
   Video,
   ListVideo,
+  Ellipsis,
 } from "lucide-react";
 import { Activity, Suspense, lazy, memo, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -71,6 +72,7 @@ const WORKSPACE_LOADERS = {
   assets: () => import("./components/assets/LocalAssets.jsx"),
   tools: () => import("./components/ToolsPanel.jsx"),
 };
+WORKSPACE_LOADERS.captureTube = () => Promise.all([WORKSPACE_LOADERS.instagram(), WORKSPACE_LOADERS.youtube()]);
 
 const BatchStudioPanel = lazy(() => import("./components/BatchStudio.jsx"));
 const SlideSlicerPanel = lazy(WORKSPACE_LOADERS.slicer);
@@ -105,8 +107,7 @@ const WORKSPACE_TABS = [
   { value: "grid", label: "Grid" },
   { value: "spellcheck", label: "Spell" },
   { value: "writing", label: "Write" },
-  { value: "instagram", label: "Capture" },
-  { value: "youtube", label: "Tube" },
+  { value: "captureTube", label: "Capture & Tube" },
   { value: "gallery", label: "Gallery" },
   { value: "assets", label: "Assets" },
   { value: "tools", label: "Tools" },
@@ -151,6 +152,7 @@ const PANEL_HELP = {
   grid: "Build grid layouts or record a logo/layer placement for repeated images.",
   spellcheck: "Check spelling, OCR text from images, and clean writing.",
   writing: "Write formatted text, use slash commands, save drafts, and insert media.",
+  captureTube: "Capture links and download public video links from one focused workspace.",
   instagram: "Capture or download Instagram media for local editing.",
   batch: "Convert, trim, compress, and preview media files in groups.",
   youtube: "Fetch YouTube info, subtitles, trims, and social-ready downloads.",
@@ -163,6 +165,7 @@ const PANEL_ICON_MAP = {
   grid: Grid3X3,
   spellcheck: WandSparkles,
   writing: Pencil,
+  captureTube: Camera,
   instagram: Camera,
   batch: Layers,
   youtube: TestTube2,
@@ -657,11 +660,150 @@ function FlowMark({ className = "" }) {
   return <img src={BRAND_ICON_SRC} alt="" aria-hidden="true" draggable="false" className={className} />;
 }
 
+const PAGE_GUIDES = {
+  slicer: {
+    title: "How to use Slicer",
+    body: "Turn one design into carousel-ready slices and export them as a clean set.",
+    steps: ["Import or paste a design.", "Adjust slice count and crop guides.", "Preview the result, then export."],
+    tip: "Use the preview before export so spacing and edges stay consistent.",
+  },
+  grid: {
+    title: "How to use Grid",
+    body: "Build picture grids, save presets, and record logo placement for repeat exports.",
+    steps: ["Choose Grid Builder, Presets, or Action Recorder.", "Import pictures and set ratio/placement.", "Save presets and apply them to matching files."],
+    tip: "For many photos, detect ratios first so presets apply to the right group.",
+  },
+  spellcheck: {
+    title: "How to use Spell",
+    body: "Check text, clean writing, and extract words from images with OCR.",
+    steps: ["Paste text or import an image.", "Run spell/OCR tools.", "Review suggestions and copy the cleaned result."],
+    tip: "Use Accurate OCR only when the fast scan misses details.",
+  },
+  writing: {
+    title: "How to use Write",
+    body: "Draft formatted text, use slash commands, and autosave notes to your default folder.",
+    steps: ["Name the document.", "Write or paste content in the editor.", "Use toolbar/slash commands, then export or autosave."],
+    tip: "Set Default Save Location in Settings once so Write stops asking for a folder.",
+  },
+  captureTube: {
+    title: "How to use Capture & Tube",
+    body: "Use one page for capture workflows and public video downloads.",
+    steps: ["Pick Capture or Tube from the segmented bar.", "Paste links or import media.", "Preview, trim, download, or export results."],
+    tip: "Tube display mode stays saved, so pick the queue layout you like once.",
+  },
+  gallery: {
+    title: "How to use Gallery",
+    body: "Browse local pictures and videos quickly without loading everything at once.",
+    steps: ["Choose a folder.", "Browse collections or library view.", "Open, tag, drag, or send media into other tools."],
+    tip: "Use Load More for huge folders to keep the app responsive.",
+  },
+  assets: {
+    title: "How to use Assets",
+    body: "Organize design files, documents, images, videos, PSD, and Affinity assets.",
+    steps: ["Select an assets folder.", "Filter by type or group.", "Open, reveal, or reuse files in other panels."],
+    tip: "Refresh after adding files outside Flow so the index stays current.",
+  },
+  tools: {
+    title: "How to use Tools",
+    body: "Badge, Assist, and Batch share one compact tools workspace.",
+    steps: ["Choose Badge, Assist, or Batch.", "Import files, folders, or Gallery media.", "Preview quality and export selected results."],
+    tip: "Badge uses fast thumbnails for display while keeping originals for export.",
+  },
+};
+
+function PageGuide({ pageId }) {
+  const guide = PAGE_GUIDES[pageId];
+  const storageKey = `flow-page-guide-collapsed-${pageId}`;
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(storageKey) === "true");
+  if (!guide) return null;
+  const toggle = () => {
+    setCollapsed((current) => {
+      localStorage.setItem(storageKey, String(!current));
+      return !current;
+    });
+  };
+  return (
+    <section className={`flow-page-guide ${collapsed ? "is-collapsed" : ""}`}>
+      <button type="button" className="flow-page-guide-toggle" onClick={toggle} aria-expanded={!collapsed}>
+        <HelpCircle size={16} />
+        <span>{guide.title}</span>
+        <ChevronDown size={16} className="flow-page-guide-chevron" />
+      </button>
+      {!collapsed && (
+        <div className="flow-page-guide-body">
+          <p>{guide.body}</p>
+          <div className="flow-page-guide-steps">
+            {guide.steps.map((step, index) => (
+              <span key={step}><strong>{index + 1}</strong>{step}</span>
+            ))}
+          </div>
+          <small>{guide.tip}</small>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function CaptureTubePanel({ initialTab = "capture", initialIgUrl = "" }) {
+  const [activeSection, setActiveSection] = useState(() => sessionStorage.getItem("flow-capture-tube-section") || initialTab);
+  useEffect(() => {
+    const handleSection = (event) => {
+      const section = event.detail?.section;
+      if (["capture", "tube"].includes(section)) setActiveSection(section);
+    };
+    window.addEventListener("flow-capture-tube-section", handleSection);
+    return () => window.removeEventListener("flow-capture-tube-section", handleSection);
+  }, []);
+  const selectSection = (section) => {
+    sessionStorage.setItem("flow-capture-tube-section", section);
+    setActiveSection(section);
+  };
+  return (
+    <div className="flow-page grid gap-4">
+      <div className="flow-segmented-shell">
+        <div className="flow-segmented-inner capture-tube-segmented" role="tablist" aria-label="Capture and Tube sections">
+          {[
+            ["capture", "Capture", Camera],
+            ["tube", "Tube", TestTube2],
+          ].map(([value, label, Icon]) => (
+            <button
+              key={value}
+              type="button"
+              role="tab"
+              aria-selected={activeSection === value}
+              className={`flow-segmented-button ${activeSection === value ? "is-active" : ""}`}
+              onClick={() => selectSection(value)}
+            >
+              <Icon size={15} />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      <Activity mode={activeSection === "capture" ? "visible" : "hidden"}>
+        <LazyTool><InstagramPanel initialUrl={initialIgUrl} embedded /></LazyTool>
+      </Activity>
+      <Activity mode={activeSection === "tube" ? "visible" : "hidden"}>
+        <LazyTool><YouTubePanel embedded /></LazyTool>
+      </Activity>
+    </div>
+  );
+}
+
 const WorkspaceActivity = memo(function WorkspaceActivity({ id, active, initialIgUrl }) {
   const Panel = WORKSPACE_COMPONENTS[id];
+  if (id === "captureTube") {
+    return (
+      <Activity mode={active ? "visible" : "hidden"}>
+        <PageGuide pageId={id} />
+        <CaptureTubePanel initialTab={sessionStorage.getItem("flow-capture-tube-section") || "capture"} initialIgUrl={initialIgUrl} />
+      </Activity>
+    );
+  }
   if (!Panel) return null;
   return (
     <Activity mode={active ? "visible" : "hidden"}>
+      <PageGuide pageId={id} />
       <LazyTool>
         {id === "instagram" ? <Panel initialUrl={initialIgUrl} /> : <Panel />}
       </LazyTool>
@@ -1126,6 +1268,7 @@ function SettingsPopover({
   );
   const [writeCommandOrder, setWriteCommandOrder] = useState(getWriteCommandOrder);
   const [settingsSearch, setSettingsSearch] = useState("");
+  const [activeSettingsNav, setActiveSettingsNav] = useState("settings-account");
   const ref = useRef(null);
 
   const isElectron = Boolean(window.flow?.platform?.isElectron);
@@ -1320,6 +1463,8 @@ function SettingsPopover({
     ? settingsFuse.search(settingsSearch.trim()).map((result) => result.item).slice(0, 7)
     : [];
   const openSettingSection = (id, highlightId = id) => {
+    const navMatch = quickSettings.find((item) => item.id === id || item.targetId === id || item.targetId === highlightId);
+    if (navMatch) setActiveSettingsNav(navMatch.id);
     const target = document.getElementById(id);
     if (!target) return;
     if (target.tagName === "DETAILS") target.open = true;
@@ -1471,8 +1616,8 @@ function SettingsPopover({
             </div>
           </div>
 
-          <div className="settings-surface custom-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
-            <section className="settings-account-row">
+          <div className="settings-surface min-h-0 flex-1 p-5">
+            <section id="settings-account-panel" className="settings-account-row">
               <FlowMark className="h-14 w-14 shrink-0 rounded-[18px] shadow-lg shadow-[rgba(204,88,0,0.18)]" />
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--flow-faint)]">Flow</p>
@@ -1486,53 +1631,64 @@ function SettingsPopover({
               </span>
             </section>
 
-            <section className="settings-search-panel" aria-label="Search settings">
-              <div className="settings-search-input">
-                <Search size={16} />
-                <input
-                  value={settingsSearch}
-                  onChange={(event) => setSettingsSearch(event.target.value)}
-                  onFocus={onOpenCommandPalette}
-                  onClick={onOpenCommandPalette}
-                  placeholder="Search settings..."
-                  aria-label="Search settings"
-                />
-                <span>Ctrl K</span>
-              </div>
-              {settingsResults.length > 0 && (
-                <div className="settings-search-results">
-                  {settingsResults.map((item) => {
-                    const Icon = item.icon || Settings;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => openSettingSection(item.sectionId || "settings-tools", item.highlightId)}
-                      >
-                        <Icon size={15} />
-                        <span>
-                          <strong>{item.title}</strong>
-                          <small>{item.path}</small>
-                        </span>
-                        <ChevronRight size={14} />
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </section>
+            <div className="settings-layout">
+              <aside className="settings-sidebar" aria-label="Settings navigation">
+                <nav className="settings-quick-nav" aria-label="Settings sections">
+                  {quickSettings.map(({ id, targetId, label, description, icon: Icon }) => (
+                    <button
+                      key={id}
+                      type="button"
+                      className={activeSettingsNav === id ? "is-active" : ""}
+                      onClick={() => openSettingSection(targetId || id)}
+                    >
+                      <Icon size={16} />
+                      <span>
+                        <strong>{label}</strong>
+                        <small>{description}</small>
+                      </span>
+                      <ChevronRight size={14} />
+                    </button>
+                  ))}
+                </nav>
 
-            <nav className="settings-quick-nav" aria-label="Settings sections">
-              {quickSettings.map(({ id, targetId, label, description, icon: Icon }) => (
-                <button key={id} type="button" onClick={() => openSettingSection(targetId || id)}>
-                  <Icon size={15} />
-                  <span>
-                    <strong>{label}</strong>
-                    <small>{description}</small>
-                  </span>
-                </button>
-              ))}
-            </nav>
+                <section className="settings-search-panel" aria-label="Search settings">
+                  <div className="settings-search-input">
+                    <Search size={16} />
+                    <input
+                      value={settingsSearch}
+                      onChange={(event) => setSettingsSearch(event.target.value)}
+                      onFocus={onOpenCommandPalette}
+                      onClick={onOpenCommandPalette}
+                      placeholder="Search settings..."
+                      aria-label="Search settings"
+                    />
+                    <span>Ctrl K</span>
+                  </div>
+                  {settingsResults.length > 0 && (
+                    <div className="settings-search-results">
+                      {settingsResults.map((item) => {
+                        const Icon = item.icon || Settings;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => openSettingSection(item.sectionId || "settings-tools", item.highlightId)}
+                          >
+                            <Icon size={15} />
+                            <span>
+                              <strong>{item.title}</strong>
+                              <small>{item.path}</small>
+                            </span>
+                            <ChevronRight size={14} />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </section>
+              </aside>
+
+              <section className="settings-content-panel custom-scrollbar">
 
             <details id="settings-tools" className="group rounded-[24px] border border-zinc-100 bg-white/60 p-4 shadow-sm dark:border-zinc-800 dark:bg-zinc-950/50">
               <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl px-1 py-1 text-[11px] font-black uppercase tracking-[0.18em] text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-200 dark:hover:text-white">
@@ -2486,6 +2642,8 @@ function SettingsPopover({
                 </button>
               </div>
             </div>
+              </section>
+            </div>
           </div>
         </div>
         </div>
@@ -2505,25 +2663,28 @@ export default function App() {
 
   const { isDark, themeMode, setThemeMode } = useFlowTheme();
   const [fontSize, setFontSize] = useState(16);
-  const [workspace, setWorkspace] = useState(
+  const normalizedInitialWorkspace =
     initialWorkspace === "batch"
       ? "tools"
-      : initialWorkspace === "capture" || initialIgUrl
-      ? "instagram"
-      : WORKSPACE_TABS.some((t) => t.value === initialWorkspace)
-        ? initialWorkspace
-        : "slicer",
-  );
+      : ["capture", "instagram", "tube", "youtube"].includes(initialWorkspace) || initialIgUrl
+        ? "captureTube"
+        : WORKSPACE_TABS.some((t) => t.value === initialWorkspace)
+          ? initialWorkspace
+          : "slicer";
+  if (["tube", "youtube"].includes(initialWorkspace)) sessionStorage.setItem("flow-capture-tube-section", "tube");
+  if (["capture", "instagram"].includes(initialWorkspace) || initialIgUrl) sessionStorage.setItem("flow-capture-tube-section", "capture");
+  const [workspace, setWorkspace] = useState(normalizedInitialWorkspace);
   const [visitedWorkspaces, setVisitedWorkspaces] = useState(() => new Set([workspace]));
   const [panelAccents, setPanelAccents] = useState(getPanelAccents);
   const [navLayout, setNavLayout] = useState(getSavedNavLayout);
   const [showNavIcons, setShowNavIcons] = useState(getSavedNavShowIcons);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [headerOptionsOpen, setHeaderOptionsOpen] = useState(false);
   const [desktopPrefs, setDesktopPrefs] = useState(() =>
     window.flow?.desktop?.getPreferences ? null : getWebDownloadFolderPreferences(),
   );
   const [localBuildState, setLocalBuildState] = useState({ status: "Ready", building: false, outputPath: "", error: "" });
-  const canPopoutWorkspace = ["writing", "instagram", "gallery"].includes(workspace);
+  const canPopoutWorkspace = ["writing", "captureTube", "gallery"].includes(workspace);
   const popoutAvailable = Boolean(window.flow?.windows?.openTool);
   const isLocalRuntime = Boolean(window.flow?.platform?.isElectron) || import.meta.env.DEV || ["localhost", "127.0.0.1"].includes(window.location.hostname);
   const commandItems = useMemo(
@@ -2665,6 +2826,16 @@ export default function App() {
       sessionStorage.setItem("flow-tools-section", "batch");
       window.dispatchEvent(new CustomEvent("flow-tools-section", { detail: { section: "batch" } }));
       value = "tools";
+    }
+    if (value === "instagram" || value === "capture") {
+      sessionStorage.setItem("flow-capture-tube-section", "capture");
+      window.dispatchEvent(new CustomEvent("flow-capture-tube-section", { detail: { section: "capture" } }));
+      value = "captureTube";
+    }
+    if (value === "youtube" || value === "tube") {
+      sessionStorage.setItem("flow-capture-tube-section", "tube");
+      window.dispatchEvent(new CustomEvent("flow-capture-tube-section", { detail: { section: "tube" } }));
+      value = "captureTube";
     }
     if (value === workspace) return;
     setWorkspace(value);
@@ -2860,6 +3031,12 @@ export default function App() {
     />
   );
 
+  const openCurrentPopout = () => {
+    const tool = workspace === "captureTube" ? "instagram" : workspace;
+    window.flow?.windows?.openTool?.(tool);
+    setHeaderOptionsOpen(false);
+  };
+
   return (
     <div className="app-shell transition-colors duration-300">
       {/* ── Header ─────────────────────────────────────────────── */}
@@ -2893,17 +3070,25 @@ export default function App() {
             </div>
           </nav>
 
-          <div className="ml-auto flex items-center justify-end gap-2">
+          <div className="relative ml-auto flex items-center justify-end gap-2">
             {canPopoutWorkspace && popoutAvailable && (
               <button
                 type="button"
-                onClick={() => window.flow?.windows?.openTool?.(workspace)}
-                aria-label="Open current tool in a separate window"
-                title="Open in separate window"
-                className="pumpkin-subtle-action hidden h-10 w-10 place-items-center rounded-2xl border text-[var(--flow-muted)] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md sm:grid"
+                onClick={() => setHeaderOptionsOpen((current) => !current)}
+                aria-label="More options"
+                title="More options"
+                className="pumpkin-subtle-action grid h-10 w-10 place-items-center rounded-2xl border text-[var(--flow-muted)] shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
-                <ExternalLink size={17} />
+                <Ellipsis size={18} />
               </button>
+            )}
+            {headerOptionsOpen && canPopoutWorkspace && popoutAvailable && (
+              <div className="header-options-menu animate-studio-pop">
+                <button type="button" onClick={openCurrentPopout}>
+                  <ExternalLink size={15} />
+                  <span>Open in separate window</span>
+                </button>
+              </div>
             )}
             {renderSettingsControl()}
           </div>

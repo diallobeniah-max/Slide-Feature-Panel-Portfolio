@@ -28,7 +28,7 @@
     --flow-faint: rgba(51, 22, 0, 0.42);
     --flow-shadow: rgba(102, 44, 0, 0.08);
     --flow-ring: rgba(255, 110, 0, 0.18);
-    --flow-page-max: 73.75rem;
+    --flow-page-max: 70rem;
     --flow-page-padding-x: 1.5rem;
     --flow-page-padding-y: 1.5rem;
     --flow-radius-hero: 28px;
@@ -267,6 +267,258 @@ textarea {
         0 12px 24px rgba(102, 44, 0, 0.12);
 }
 
+.flow-page-guide {
+    width: min(100% - calc(var(--flow-page-padding-x) * 2), var(--flow-page-max));
+    margin: var(--flow-page-padding-y) auto 0;
+    overflow: hidden;
+    border: 1px solid var(--flow-border);
+    border-radius: 1.45rem;
+    background: color-mix(in srgb, var(--flow-card) 92%, transparent);
+    box-shadow: 0 14px 34px var(--flow-shadow);
+    transition: border-color 200ms ease, background-color 240ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.flow-page-guide:hover {
+    border-color: var(--flow-border-strong);
+    transform: translateY(-1px);
+}
+
+.flow-page-guide-toggle {
+    display: flex;
+    min-height: 3.35rem;
+    width: 100%;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.8rem 1rem;
+    color: var(--flow-text);
+    font-size: 0.82rem;
+    font-weight: 950;
+    text-align: left;
+}
+
+.flow-page-guide-toggle svg {
+    color: var(--pumpkin-500);
+}
+
+.flow-page-guide-chevron {
+    margin-left: auto;
+    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.flow-page-guide.is-collapsed .flow-page-guide-chevron {
+    transform: rotate(-90deg);
+}
+
+.flow-page-guide-body {
+    display: grid;
+    gap: 0.85rem;
+    border-top: 1px solid var(--flow-border);
+    padding: 0 1rem 1rem;
+    color: var(--flow-muted);
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.55;
+}
+
+.flow-page-guide-steps {
+    display: grid;
+    gap: 0.55rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.flow-page-guide-steps span {
+    display: flex;
+    min-height: 3rem;
+    align-items: center;
+    gap: 0.55rem;
+    border: 1px solid var(--flow-border);
+    border-radius: 1rem;
+    background: var(--flow-soft);
+    padding: 0.65rem;
+}
+
+.flow-page-guide-steps strong {
+    display: grid;
+    width: 1.65rem;
+    height: 1.65rem;
+    flex: 0 0 auto;
+    place-items: center;
+    border-radius: 0.65rem;
+    background: var(--pumpkin-700);
+    color: #fff;
+    font-size: 0.72rem;
+}
+
+.flow-page-guide-body small {
+    color: var(--flow-faint);
+    font-weight: 850;
+}
+
+.header-options-menu {
+    position: absolute;
+    top: calc(100% + 0.6rem);
+    right: 3rem;
+    z-index: 80;
+    min-width: 15rem;
+    overflow: hidden;
+    border: 1px solid var(--flow-border);
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--flow-card) 96%, transparent);
+    box-shadow: 0 20px 45px var(--flow-shadow);
+    backdrop-filter: blur(18px);
+}
+
+.header-options-menu button {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.85rem 1rem;
+    color: var(--flow-text);
+    font-size: 0.78rem;
+    font-weight: 900;
+    text-align: left;
+    transition: background-color 160ms ease, color 160ms ease;
+}
+
+.header-options-menu button:hover {
+    background: var(--flow-soft);
+    color: var(--pumpkin-700);
+}
+
+.badge-preview-modal {
+    animation: settings-backdrop-in 220ms ease both;
+}
+
+.badge-preview-shell {
+    display: grid;
+    width: min(96vw, 72rem);
+    max-height: min(92vh, 52rem);
+    overflow: hidden;
+    border: 1px solid var(--flow-border);
+    border-radius: 1.75rem;
+    background: var(--flow-bg-elevated);
+    box-shadow: 0 24px 70px rgba(0, 0, 0, 0.36);
+}
+
+.badge-preview-header,
+.badge-preview-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-bottom: 1px solid var(--flow-border);
+    padding: 0.85rem 1rem;
+}
+
+.badge-preview-controls {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+}
+
+.badge-preview-controls input[type="range"] {
+    width: min(16rem, 32vw);
+    accent-color: var(--pumpkin-500);
+}
+
+.badge-preview-controls > span {
+    min-width: 3rem;
+    color: var(--flow-muted);
+    font-size: 0.75rem;
+    font-weight: 950;
+}
+
+.badge-compare-hold {
+    min-height: 2.45rem;
+    border: 1px solid var(--flow-border);
+    border-radius: var(--flow-radius-button);
+    background: var(--flow-card);
+    padding-inline: 0.9rem;
+    color: var(--flow-muted);
+    font-size: 0.72rem;
+    font-weight: 950;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: background-color 180ms ease, color 180ms ease, transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.badge-compare-hold:hover,
+.badge-compare-hold.is-active {
+    background: var(--pumpkin-700);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.badge-preview-grid {
+    display: grid;
+    min-height: 0;
+    gap: 0.75rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    overflow: auto;
+    padding: 1rem;
+}
+
+.badge-preview-frame {
+    display: grid;
+    min-height: 24rem;
+    grid-template-rows: auto minmax(0, 1fr);
+    overflow: hidden;
+    border: 1px solid var(--flow-border);
+    border-radius: 1.25rem;
+    background: color-mix(in srgb, var(--flow-card) 88%, transparent);
+}
+
+.badge-preview-frame figcaption {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-bottom: 1px solid var(--flow-border);
+    padding: 0.7rem 0.85rem;
+    color: var(--flow-text);
+    font-size: 0.76rem;
+    font-weight: 950;
+}
+
+.badge-preview-frame figcaption small {
+    color: var(--flow-muted);
+    font-size: 0.68rem;
+}
+
+.badge-preview-pan {
+    display: grid;
+    min-height: 0;
+    cursor: grab;
+    place-items: center;
+    overflow: hidden;
+    background: #0b0806;
+    touch-action: none;
+}
+
+.badge-preview-pan:active {
+    cursor: grabbing;
+}
+
+.badge-preview-media {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    transition: transform 120ms cubic-bezier(0.22, 1, 0.36, 1);
+    transform-origin: center;
+    user-select: none;
+}
+
+.badge-preview-empty {
+    display: grid;
+    place-items: center;
+    min-height: 100%;
+    padding: 1rem;
+    color: var(--flow-muted);
+    text-align: center;
+    font-size: 0.82rem;
+    font-weight: 850;
+}
+
 .dark .flow-segmented-button.is-active {
     color: #ffffff;
     background: color-mix(in srgb, #555864 74%, var(--pumpkin-900) 26%);
@@ -285,6 +537,13 @@ textarea {
 }
 
 .settings-dashboard-shell {
+    left: 50% !important;
+    top: 50% !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: min(96vw, 58rem) !important;
+    height: min(90vh, 44rem);
+    translate: -50% -50%;
     border-color: var(--flow-border);
     background:
         linear-gradient(180deg, color-mix(in srgb, var(--flow-bg-elevated) 94%, transparent), color-mix(in srgb, var(--flow-bg) 86%, transparent)),
@@ -301,22 +560,46 @@ textarea {
 .settings-dashboard-shell.is-maximized {
     left: 50%;
     right: auto;
-    top: 4vh;
+    top: 50%;
     bottom: auto;
-    width: min(96vw, 73.75rem);
+    width: min(96vw, 73.75rem) !important;
     height: min(92vh, 53.75rem);
-    transform: translateX(-50%);
+    translate: -50% -50%;
 }
 
 .settings-dashboard-shell.is-maximized .settings-surface {
     display: grid;
-    grid-template-columns: minmax(15rem, 18rem) minmax(0, 1fr);
-    align-content: start;
-    gap: 1rem;
 }
 
 .settings-dashboard-shell.is-maximized .settings-account-row {
     grid-column: 1 / -1;
+}
+
+.settings-surface {
+    display: grid !important;
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 1rem;
+    overflow: hidden !important;
+}
+
+.settings-layout {
+    display: grid;
+    min-height: 0;
+    grid-template-columns: minmax(16rem, 18.75rem) minmax(0, 1fr);
+    gap: 1rem;
+}
+
+.settings-sidebar {
+    display: grid;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 0.85rem;
+}
+
+.settings-content-panel {
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 0.35rem;
 }
 
 .settings-account-row {
@@ -331,28 +614,29 @@ textarea {
 }
 
 .settings-quick-nav {
-    position: sticky;
-    top: -1px;
-    z-index: 5;
+    min-height: 0;
+    overflow-y: auto;
     display: grid;
     grid-template-columns: 1fr;
     gap: 0.5rem;
-    padding: 0.35rem;
-    border: 1px solid color-mix(in srgb, var(--pumpkin-400) 52%, var(--flow-border));
+    align-content: start;
+    padding: 0.45rem;
+    border: 1px solid var(--flow-border);
     border-radius: 22px;
-    background: linear-gradient(135deg, var(--pumpkin-500), var(--pumpkin-700));
-    box-shadow: 0 16px 34px rgba(204, 88, 0, 0.24);
+    background: color-mix(in srgb, var(--flow-card) 92%, transparent);
+    box-shadow: 0 16px 34px var(--flow-shadow);
     backdrop-filter: blur(16px) saturate(1.08);
 }
 
 .settings-quick-nav button {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
-    min-height: 3.2rem;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    min-height: 3.45rem;
     align-items: center;
-    gap: 0.7rem;
+    gap: 0.75rem;
     border-radius: 17px;
-    color: rgba(255, 241, 229, 0.86);
+    color: var(--flow-muted);
+    padding: 0.55rem 0.7rem;
     font-size: 0.68rem;
     font-weight: 900;
     letter-spacing: 0.08em;
@@ -374,7 +658,7 @@ textarea {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: inherit;
+    color: var(--flow-text);
     font-size: 0.78rem;
 }
 
@@ -383,7 +667,7 @@ textarea {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    color: rgba(255, 241, 229, 0.58);
+    color: var(--flow-faint);
     font-size: 0.65rem;
     font-weight: 800;
     letter-spacing: 0;
@@ -391,13 +675,24 @@ textarea {
 }
 
 .settings-quick-nav button:hover {
-    background: rgba(255, 255, 255, 0.16);
-    color: #ffffff;
+    background: var(--flow-soft);
+    color: var(--flow-text);
     transform: translateY(-1px);
 }
 
+.settings-quick-nav button.is-active {
+    background: linear-gradient(135deg, color-mix(in srgb, var(--pumpkin-500) 90%, white 10%), var(--pumpkin-700));
+    color: #ffffff;
+    box-shadow: 0 12px 28px rgba(204, 88, 0, 0.24);
+}
+
+.settings-quick-nav button.is-active strong,
+.settings-quick-nav button.is-active small {
+    color: #ffffff;
+}
+
 .settings-quick-nav button:focus-visible {
-    outline: 2px solid rgba(255, 255, 255, 0.8);
+    outline: 2px solid var(--pumpkin-300);
     outline-offset: 2px;
 }
 
@@ -432,10 +727,6 @@ textarea {
 }
 
 .settings-search-panel {
-    position: sticky;
-    bottom: -0.35rem;
-    z-index: 6;
-    order: 30;
     border: 1px solid var(--flow-border);
     border-radius: 22px;
     background: color-mix(in srgb, var(--flow-card-strong) 74%, var(--flow-soft) 26%);
@@ -445,12 +736,12 @@ textarea {
 
 .settings-dashboard-shell.is-maximized .settings-search-panel,
 .settings-dashboard-shell.is-maximized .settings-quick-nav {
-    grid-column: 1;
+    grid-column: auto;
 }
 
 .settings-dashboard-shell.is-maximized .settings-surface > details,
 .settings-dashboard-shell.is-maximized .settings-surface > div:not(.settings-account-row):not(.settings-search-panel):not(.settings-quick-nav) {
-    grid-column: 2;
+    grid-column: auto;
 }
 
 .settings-dashboard-shell.is-maximized .settings-search-panel {
@@ -744,22 +1035,22 @@ button[class*="hover:bg-zinc-"],
 @keyframes settings-drawer {
     from {
         opacity: 0;
-        transform: translateX(24px) scale(0.985);
+        transform: translateY(12px) scale(0.985);
     }
     to {
         opacity: 1;
-        transform: translateX(0) scale(1);
+        transform: translateY(0) scale(1);
     }
 }
 
 @keyframes settings-drawer-out {
     from {
         opacity: 1;
-        transform: translateX(0);
+        transform: translateY(0) scale(1);
     }
     to {
         opacity: 0;
-        transform: translateX(28px) scale(0.985);
+        transform: translateY(14px) scale(0.985);
     }
 }
 
@@ -1042,7 +1333,70 @@ button[class*="hover:bg-zinc-"],
     min-height: 100%;
 }
 
-.settings-surface > details {
+.tube-display-panel {
+    display: flex;
+    min-height: 3.4rem;
+    align-items: center;
+    gap: 0.75rem;
+    border: 1px solid var(--flow-border);
+    border-radius: 1.35rem;
+    background: color-mix(in srgb, var(--flow-card) 90%, transparent);
+    box-shadow: 0 12px 28px var(--flow-shadow);
+    padding: 0.45rem;
+}
+
+.tube-display-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding-inline: 0.65rem;
+    color: var(--flow-muted);
+    font-size: 0.68rem;
+    font-weight: 950;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.tube-display-options {
+    display: flex;
+    gap: 0.35rem;
+}
+
+.tube-display-options button {
+    min-height: 2.35rem;
+    border-radius: 0.95rem;
+    padding-inline: 0.9rem;
+    color: var(--flow-muted);
+    font-size: 0.7rem;
+    font-weight: 950;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    transition:
+        background-color 180ms ease,
+        color 180ms ease,
+        transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+        box-shadow 200ms ease;
+}
+
+.tube-display-options button:hover {
+    background: var(--flow-soft);
+    color: var(--flow-text);
+    transform: translateY(-1px);
+}
+
+.tube-display-options button.is-active {
+    background: linear-gradient(135deg, var(--pumpkin-500), var(--pumpkin-700));
+    color: #ffffff;
+    box-shadow: 0 10px 22px rgba(204, 88, 0, 0.22);
+}
+
+.tube-queue-list {
+    transition: grid-template-columns 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.settings-surface > details,
+.settings-content-panel > details {
     background: color-mix(in srgb, var(--flow-card) 88%, var(--pumpkin-50) 12%);
     border-color: var(--flow-border);
     box-shadow:
@@ -1054,12 +1408,14 @@ button[class*="hover:bg-zinc-"],
         box-shadow 220ms ease,
         transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.settings-surface > details:hover {
+.settings-surface > details:hover,
+.settings-content-panel > details:hover {
     border-color: var(--flow-border-strong);
     transform: translateY(-1px);
 }
 
-.settings-surface > details[open] {
+.settings-surface > details[open],
+.settings-content-panel > details[open] {
     border-color: color-mix(in srgb, var(--pumpkin-400) 58%, var(--flow-border));
     background:
         linear-gradient(135deg, color-mix(in srgb, var(--pumpkin-100) 42%, var(--flow-card) 58%), var(--flow-card));
@@ -1068,70 +1424,89 @@ button[class*="hover:bg-zinc-"],
         0 18px 42px rgba(204, 88, 0, 0.14);
 }
 
-.dark .settings-surface > details {
+.dark .settings-surface > details,
+.dark .settings-content-panel > details {
     background: color-mix(in srgb, var(--flow-card) 82%, var(--pumpkin-950) 18%);
     border-color: var(--flow-border);
     box-shadow:
         0 1px 0 rgba(255, 255, 255, 0.06) inset,
         0 18px 36px rgba(0, 0, 0, 0.2);
 }
-.dark .settings-surface > details:hover {
+.dark .settings-surface > details:hover,
+.dark .settings-content-panel > details:hover {
     border-color: var(--flow-border-strong);
 }
 
-.dark .settings-surface > details[open] {
+.dark .settings-surface > details[open],
+.dark .settings-content-panel > details[open] {
     border-color: color-mix(in srgb, var(--pumpkin-300) 42%, var(--flow-border));
     background:
         linear-gradient(135deg, color-mix(in srgb, var(--pumpkin-900) 58%, var(--flow-card) 42%), var(--flow-card));
 }
 
-.settings-surface > details > summary {
+.settings-surface > details > summary,
+.settings-content-panel > details > summary {
     min-height: 3.1rem;
     padding: 0.25rem 0.15rem !important;
     letter-spacing: 0.08em !important;
     text-transform: none !important;
 }
 
-.settings-surface > details > summary span {
+.settings-surface > details > summary span,
+.settings-content-panel > details > summary span {
     font-size: 0.78rem;
     letter-spacing: 0.04em;
     text-transform: none;
 }
 
 .settings-surface > details[open] > summary,
-.settings-surface > details[open] > summary span {
+.settings-surface > details[open] > summary span,
+.settings-content-panel > details[open] > summary,
+.settings-content-panel > details[open] > summary span {
     color: var(--pumpkin-800) !important;
 }
 
 .dark .settings-surface > details[open] > summary,
-.dark .settings-surface > details[open] > summary span {
+.dark .settings-surface > details[open] > summary span,
+.dark .settings-content-panel > details[open] > summary,
+.dark .settings-content-panel > details[open] > summary span {
     color: var(--pumpkin-100) !important;
 }
 
-.settings-surface > details > div {
+.settings-surface > details > div,
+.settings-content-panel > details > div {
     border-top: 1px solid var(--flow-border);
     margin-top: 0.5rem !important;
     padding-top: 0.85rem;
 }
 
-.settings-surface > details > div > div:first-child {
+.settings-surface > details > div > div:first-child,
+.settings-content-panel > details > div > div:first-child {
     display: none !important;
 }
 
 .settings-surface > details > div > .grid,
-.settings-surface > details > div > div:not(:first-child) {
+.settings-surface > details > div > div:not(:first-child),
+.settings-content-panel > details > div > .grid,
+.settings-content-panel > details > div > div:not(:first-child) {
     gap: 0.45rem;
 }
 
 .settings-surface > details button,
-.settings-surface > details [role="button"] {
+.settings-surface > details [role="button"],
+.settings-content-panel > details button,
+.settings-content-panel > details [role="button"] {
     min-height: 2.9rem;
 }
 
 .settings-surface > details > div > .grid > button,
 .settings-surface > details > div > .grid > div,
 .settings-surface > details > div > div:not(:first-child) > button,
-.settings-surface > details > div > div:not(:first-child) > div {
+.settings-surface > details > div > div:not(:first-child) > div,
+.settings-content-panel > details > div > .grid > button,
+.settings-content-panel > details > div > .grid > div,
+.settings-content-panel > details > div > div:not(:first-child) > button,
+.settings-content-panel > details > div > div:not(:first-child) > div {
     border-color: var(--flow-border) !important;
     background: color-mix(in srgb, var(--flow-card-strong) 72%, transparent) !important;
     color: var(--flow-text);
@@ -1141,45 +1516,71 @@ button[class*="hover:bg-zinc-"],
 .dark .settings-surface > details > div > .grid > button,
 .dark .settings-surface > details > div > .grid > div,
 .dark .settings-surface > details > div > div:not(:first-child) > button,
-.dark .settings-surface > details > div > div:not(:first-child) > div {
+.dark .settings-surface > details > div > div:not(:first-child) > div,
+.dark .settings-content-panel > details > div > .grid > button,
+.dark .settings-content-panel > details > div > .grid > div,
+.dark .settings-content-panel > details > div > div:not(:first-child) > button,
+.dark .settings-content-panel > details > div > div:not(:first-child) > div {
     background: color-mix(in srgb, var(--flow-card-strong) 64%, transparent) !important;
 }
 
 .settings-surface > details > div > .grid > button:hover,
-.settings-surface > details > div > div:not(:first-child) > button:hover {
+.settings-surface > details > div > div:not(:first-child) > button:hover,
+.settings-content-panel > details > div > .grid > button:hover,
+.settings-content-panel > details > div > div:not(:first-child) > button:hover {
     border-color: var(--flow-border-strong) !important;
     background: var(--flow-soft) !important;
     transform: translateY(-1px);
 }
 
 .settings-surface > details > div p,
-.settings-surface > details > div span {
+.settings-surface > details > div span,
+.settings-content-panel > details > div p,
+.settings-content-panel > details > div span {
     color: var(--flow-muted);
 }
 
 .settings-surface > details > div p[class*="font-black"],
-.settings-surface > details > div span[class*="font-black"] {
+.settings-surface > details > div span[class*="font-black"],
+.settings-content-panel > details > div p[class*="font-black"],
+.settings-content-panel > details > div span[class*="font-black"] {
     color: var(--flow-text);
 }
 
-.settings-surface > details .rounded-full {
+.settings-surface > details .rounded-full,
+.settings-content-panel > details .rounded-full {
     box-shadow: none;
 }
 
 .settings-surface > details input,
 .settings-surface > details select,
-.settings-surface > details textarea {
+.settings-surface > details textarea,
+.settings-content-panel > details input,
+.settings-content-panel > details select,
+.settings-content-panel > details textarea {
     border-color: var(--flow-border) !important;
     background: var(--flow-input) !important;
     color: var(--flow-text) !important;
 }
 
-.settings-surface > details + details {
+.settings-surface > details + details,
+.settings-content-panel > details + details {
     margin-top: 0.35rem;
 }
 
 .settings-surface > div:not(.settings-account-row):not(.settings-quick-nav),
 .settings-surface > section + div {
+    border-color: var(--flow-border) !important;
+    background: color-mix(in srgb, var(--flow-card) 86%, transparent) !important;
+}
+
+.settings-surface > .settings-layout {
+    border: 0 !important;
+    background: transparent !important;
+}
+
+.settings-content-panel > div,
+.settings-content-panel > section {
     border-color: var(--flow-border) !important;
     background: color-mix(in srgb, var(--flow-card) 86%, transparent) !important;
 }
@@ -1574,15 +1975,70 @@ button[class*="hover:bg-zinc-"],
 }
 
 @media (max-width: 900px) {
-    .settings-dashboard-shell.is-maximized .settings-surface {
-        display: block;
+    .settings-dashboard-shell,
+    .settings-dashboard-shell.is-maximized {
+        width: min(96vw, 44rem) !important;
+        height: min(92vh, 48rem);
     }
 
+    .settings-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-sidebar {
+        grid-template-rows: auto auto;
+    }
+
+    .settings-quick-nav {
+        max-height: 18rem;
+    }
+}
+
+@media (max-width: 640px) {
+    .settings-dashboard-shell,
     .settings-dashboard-shell.is-maximized {
+        width: calc(100vw - 1rem) !important;
+        height: calc(100vh - 1rem);
+        border-radius: 1.35rem !important;
+    }
+
+    .settings-surface {
+        padding: 0.85rem !important;
+    }
+
+    .settings-account-row {
+        border-radius: 1.15rem;
+    }
+
+    .settings-quick-nav button {
+        min-height: 3.15rem;
+    }
+
+    .flow-page-guide-steps,
+    .badge-preview-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .badge-preview-shell {
+        width: calc(100vw - 1rem);
+        max-height: calc(100vh - 1rem);
+        border-radius: 1.25rem;
+    }
+
+    .badge-preview-frame {
+        min-height: 18rem;
+    }
+
+    .badge-preview-controls input[type="range"] {
+        width: 100%;
+    }
+
+    .header-options-menu {
+        position: fixed;
         left: 0.75rem;
         right: 0.75rem;
-        width: auto;
-        transform: none;
+        top: auto;
+        bottom: 0.75rem;
     }
 }
 

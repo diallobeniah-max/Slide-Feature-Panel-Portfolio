@@ -1,17 +1,23 @@
 import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   BadgeCheck,
+  ChevronLeft,
+  ChevronRight,
   Check,
   Eye,
   FileArchive,
   Film,
   FolderPlus,
   FolderOpen,
+  HelpCircle,
   Image as ImageIcon,
   Images,
   Layers,
   LoaderCircle,
+  Maximize2,
+  Minus,
   Plus,
+  RotateCcw,
   Save,
   Sparkles,
   Trash2,
@@ -65,8 +71,54 @@ function waitForPaint() {
   return new Promise((resolve) => requestAnimationFrame(resolve));
 }
 
+function waitForIdle() {
+  return new Promise((resolve) => {
+    if (window.requestIdleCallback) {
+      window.requestIdleCallback(resolve, { timeout: 250 });
+    } else {
+      window.setTimeout(resolve, 16);
+    }
+  });
+}
+
 function isSupportedMediaFile(file) {
   return Boolean(file?.type && SUPPORTED_MEDIA_TYPES.some((type) => file.type.startsWith(type)));
+}
+
+function canvasToBlob(canvas, type, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => blob ? resolve(blob) : reject(new Error("Preview thumbnail failed.")), type, quality);
+  });
+}
+
+async function createPreviewThumbnailUrl(file, sourceUrl) {
+  if (!file?.type?.startsWith("image/")) return "";
+  let decoded = null;
+  try {
+    const bitmap = await createImageBitmap(file, { resizeQuality: "high" });
+    decoded = { source: bitmap, width: bitmap.width, height: bitmap.height, cleanup: () => bitmap.close?.() };
+  } catch {
+    const image = new Image();
+    image.decoding = "async";
+    image.src = sourceUrl || URL.createObjectURL(file);
+    await image.decode();
+    decoded = {
+      source: image,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      cleanup: () => { if (!sourceUrl) URL.revokeObjectURL(image.src); },
+    };
+  }
+
+  const maxEdge = 420;
+  const scale = Math.min(1, maxEdge / Math.max(decoded.width, decoded.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(decoded.width * scale));
+  canvas.height = Math.max(1, Math.round(decoded.height * scale));
+  canvas.getContext("2d", { alpha: true }).drawImage(decoded.source, 0, 0, canvas.width, canvas.height);
+  decoded.cleanup();
+  const blob = await canvasToBlob(canvas, "image/webp", 0.72);
+  return URL.createObjectURL(blob);
 }
 
 function createAssetFromGalleryItem(item) {
@@ -246,10 +298,16 @@ export default function ToolsPanel() {
   const [galleryItems, setGalleryItems] = useState([]);
   const [gallerySelected, setGallerySelected] = useState(() => new Set());
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [previewModalOpen, setPreviewModalOpen] = useState(false);
+  const [modalZoom, setModalZoom] = useState(100);
+  const [modalPan, setModalPan] = useState({ x: 0, y: 0 });
+  const [compareHold, setCompareHold] = useState(false);
   const fileInputRef = useRef(null);
   const folderInputRef = useRef(null);
   const cancelRef = useRef(false);
   const objectUrlsRef = useRef(new Set());
+  const thumbnailUrlsRef = useRef(new Set());
+  const modalDragRef = useRef(null);
   const isDesktop = Boolean(window.flow?.desktop?.startArchive);
 
   const selectedAssets = useMemo(() => assets.filter((asset) => selectedIds.has(asset.id)), [assets, selectedIds]);
@@ -258,14 +316,33 @@ export default function ToolsPanel() {
   const estimatedBytes = totalBytes * (resizePercent / 100) ** 2 * (0.2 + quality / 100 * 0.68);
   const visibleAssets = assets.slice(0, visibleCount);
   const hiddenAssetCount = Math.max(0, assets.length - visibleAssets.length);
+  const activeIndex = active ? assets.findIndex((asset) => asset.id === active.id) : -1;
   const toolSections = [
     { value: "badge", label: "Badge", icon: BadgeCheck },
     { value: "assist", label: "Assist", icon: Sparkles },
     { value: "batch", label: "Batch", icon: Layers },
   ];
+  const sectionGuide = {
+    badge: {
+      title: "Badge workflow",
+      body: "Import pictures, preview compression, compare quality, then export selected files as ZIP or 7z.",
+      steps: ["Import files, a folder, or Gallery media.", "Select pictures and build a compare preview.", "Export selected originals with your chosen quality."],
+    },
+    assist: {
+      title: "Assist workflow",
+      body: "Use Assist as a quick staging area for large media batches before export.",
+      steps: ["Import media.", "Check current counts and size estimates.", "Switch to Badge or Batch when ready."],
+    },
+    batch: {
+      title: "Batch workflow",
+      body: "Batch keeps the existing converter and queue tools inside Tools.",
+      steps: ["Add files to the queue.", "Choose output settings.", "Run the batch and review results."],
+    },
+  }[activeToolSection];
 
   useEffect(() => () => {
     objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+    thumbnailUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
   }, []);
 
   useEffect(() => () => {
@@ -281,6 +358,47 @@ export default function ToolsPanel() {
     return () => window.removeEventListener("flow-tools-section", handleToolsSection);
   }, []);
 
+  function revokeAssetUrls(asset) {
+    if (objectUrlsRef.current.has(asset.objectUrl)) {
+      URL.revokeObjectURL(asset.objectUrl);
+      objectUrlsRef.current.delete(asset.objectUrl);
+    }
+    if (thumbnailUrlsRef.current.has(asset.thumbnailUrl)) {
+      URL.revokeObjectURL(asset.thumbnailUrl);
+      thumbnailUrlsRef.current.delete(asset.thumbnailUrl);
+    }
+  }
+
+  async function buildImportedThumbnails(importedAssets) {
+    const imageAssets = importedAssets.filter((asset) => asset.type === "image" && asset.file);
+    if (!imageAssets.length) return;
+    setJob({ label: `Processing previews 0/${imageAssets.length}`, progress: 1 });
+    let completed = 0;
+    await runPool(imageAssets, 2, async (asset) => {
+      try {
+        await waitForIdle();
+        const thumbnailUrl = await createPreviewThumbnailUrl(asset.file, asset.objectUrl);
+        if (thumbnailUrl) {
+          thumbnailUrlsRef.current.add(thumbnailUrl);
+          setAssets((current) => current.map((item) => (
+            item.id === asset.id ? { ...item, thumbnailUrl, previewStatus: "ready" } : item
+          )));
+        }
+      } catch {
+        setAssets((current) => current.map((item) => (
+          item.id === asset.id ? { ...item, previewStatus: "warning" } : item
+        )));
+      } finally {
+        completed += 1;
+        setJob({
+          label: `Processing previews ${completed}/${imageAssets.length}`,
+          progress: Math.max(5, Math.round((completed / imageAssets.length) * 100)),
+        });
+        if (completed % 3 === 0) await waitForPaint();
+      }
+    });
+  }
+
   async function addFiles(files, label = "files") {
     const list = Array.from(files || []).filter(isSupportedMediaFile);
     if (!list.length) {
@@ -290,21 +408,23 @@ export default function ToolsPanel() {
 
     setJob({ label: `Importing ${list.length} ${label}`, progress: 1 });
     let imported = 0;
+    const importedAssets = [];
     try {
       for (let index = 0; index < list.length; index += IMPORT_CHUNK_SIZE) {
-        const chunk = list.slice(index, index + IMPORT_CHUNK_SIZE).map(createAssetFromFile);
+        const chunk = list.slice(index, index + IMPORT_CHUNK_SIZE).map((file) => ({
+          ...createAssetFromFile(file),
+          thumbnailUrl: "",
+          previewStatus: file.type.startsWith("image/") ? "processing" : "ready",
+        }));
         chunk.forEach((asset) => objectUrlsRef.current.add(asset.objectUrl));
+        importedAssets.push(...chunk);
         setAssets((current) => [...current, ...chunk]);
-        setSelectedIds((current) => {
-          const selected = new Set(current);
-          chunk.forEach((asset) => selected.add(asset.id));
-          return selected;
-        });
         setActiveId((current) => current || chunk[0]?.id || "");
         imported += chunk.length;
         setJob({ label: `Importing ${imported}/${list.length}`, progress: Math.max(3, Math.round((imported / list.length) * 100)) });
         await waitForPaint();
       }
+      await buildImportedThumbnails(importedAssets);
       setVisibleCount((current) => Math.max(PAGE_SIZE, current));
       notify("Tools Import Ready", `${list.length} file${list.length === 1 ? "" : "s"} imported.`);
     } finally {
@@ -345,17 +465,22 @@ export default function ToolsPanel() {
   async function importGallerySelected() {
     const chosen = galleryItems.filter((item) => gallerySelected.has(item.id));
     if (!chosen.length) return;
-    const next = chosen.map(createAssetFromGalleryItem);
-    setAssets((current) => [...current, ...next]);
-    setSelectedIds((current) => {
-      const selected = new Set(current);
-      next.forEach((asset) => selected.add(asset.id));
-      return selected;
-    });
-    setActiveId((current) => current || next[0]?.id || "");
-    setVisibleCount((current) => Math.max(PAGE_SIZE, current));
-    setGalleryOpen(false);
-    notify("Gallery Import Ready", `${next.length} Gallery item${next.length === 1 ? "" : "s"} linked instantly.`);
+    setJob({ label: `Importing Gallery 0/${chosen.length}`, progress: 1 });
+    try {
+      const next = chosen.map(createAssetFromGalleryItem);
+      for (let index = 0; index < next.length; index += IMPORT_CHUNK_SIZE) {
+        const chunk = next.slice(index, index + IMPORT_CHUNK_SIZE);
+        setAssets((current) => [...current, ...chunk]);
+        setActiveId((current) => current || chunk[0]?.id || "");
+        setJob({ label: `Importing Gallery ${Math.min(index + chunk.length, next.length)}/${next.length}`, progress: Math.round(((index + chunk.length) / next.length) * 100) });
+        await waitForPaint();
+      }
+      setVisibleCount((current) => Math.max(PAGE_SIZE, current));
+      setGalleryOpen(false);
+      notify("Gallery Import Ready", `${next.length} Gallery item${next.length === 1 ? "" : "s"} linked instantly.`);
+    } finally {
+      setJob(null);
+    }
   }
 
   async function withReadyAsset(asset, task) {
@@ -384,12 +509,7 @@ export default function ToolsPanel() {
 
   function removeSelected() {
     const removing = selectedIds;
-    assets.filter((asset) => removing.has(asset.id)).forEach((asset) => {
-      if (objectUrlsRef.current.has(asset.objectUrl)) {
-        URL.revokeObjectURL(asset.objectUrl);
-        objectUrlsRef.current.delete(asset.objectUrl);
-      }
-    });
+    assets.filter((asset) => removing.has(asset.id)).forEach(revokeAssetUrls);
     const remaining = assets.filter((asset) => !removing.has(asset.id));
     setAssets(remaining);
     setSelectedIds(new Set());
@@ -411,6 +531,54 @@ export default function ToolsPanel() {
       setJob(null);
     }
   }
+
+  function movePreview(direction) {
+    if (!assets.length) return;
+    const currentIndex = activeIndex >= 0 ? activeIndex : 0;
+    const nextIndex = (currentIndex + direction + assets.length) % assets.length;
+    setActiveId(assets[nextIndex]?.id || "");
+    setModalPan({ x: 0, y: 0 });
+  }
+
+  useEffect(() => {
+    if (!previewModalOpen) return undefined;
+    const onKeyDown = (event) => {
+      if (event.key === "Escape") setPreviewModalOpen(false);
+      if (event.key === "ArrowLeft") movePreview(-1);
+      if (event.key === "ArrowRight") movePreview(1);
+      if (event.key === "+" || event.key === "=") setModalZoom((value) => Math.min(240, value + 10));
+      if (event.key === "-") setModalZoom((value) => Math.max(50, value - 10));
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeIndex, assets, previewModalOpen]);
+
+  const modalImageStyle = {
+    transform: `translate(${modalPan.x}px, ${modalPan.y}px) scale(${modalZoom / 100})`,
+  };
+
+  const startModalPan = (event) => {
+    modalDragRef.current = {
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: modalPan.x,
+      originY: modalPan.y,
+    };
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  };
+
+  const moveModalPan = (event) => {
+    const drag = modalDragRef.current;
+    if (!drag) return;
+    setModalPan({
+      x: drag.originX + event.clientX - drag.startX,
+      y: drag.originY + event.clientY - drag.startY,
+    });
+  };
+
+  const endModalPan = () => {
+    modalDragRef.current = null;
+  };
 
   function savePreset() {
     const name = presetName.trim() || `Quality ${quality}`;
@@ -500,6 +668,25 @@ export default function ToolsPanel() {
         </div>
       </div>
 
+      <Card className="tools-section-guide p-4">
+        <div className="flex items-start gap-3">
+          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-2xl bg-[var(--flow-soft)] text-[var(--pumpkin-700)]">
+            <HelpCircle size={18} />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-sm font-black text-[var(--flow-text)]">{sectionGuide.title}</h2>
+            <p className="mt-1 text-xs font-semibold leading-relaxed text-[var(--flow-muted)]">{sectionGuide.body}</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {sectionGuide.steps.map((step, index) => (
+                <span key={step} className="rounded-2xl border border-[var(--flow-border)] bg-[var(--flow-soft)] px-3 py-2 text-[11px] font-bold text-[var(--flow-muted)]">
+                  <strong className="mr-1 text-[var(--flow-text)]">{index + 1}.</strong>{step}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+
       {activeToolSection !== "batch" && (
       <Card className="tools-command-panel p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -584,13 +771,19 @@ export default function ToolsPanel() {
 
         <section className="grid gap-5">
           <Card className="p-5">
-            <div className="flex items-center justify-between gap-3"><div><h3 className="text-lg font-black">Preview</h3><p className="text-xs font-semibold text-zinc-500">{active?.name || "Select a picture or video"}</p></div><Button size="sm" icon={Eye} onClick={buildPreview} disabled={!active || Boolean(job)}>Compare</Button></div>
-            {active ? <div className="mt-4 grid gap-3 lg:grid-cols-2"><MediaPreview asset={active} src={active.objectUrl} label="Original" size={active.size} />{preview?.assetId === active.id ? <MediaPreview asset={active} src={preview.url} label="Compressed" size={preview.blob.size} /> : <div className="grid min-h-40 place-items-center rounded-xl border border-dashed border-zinc-300 text-sm font-semibold text-zinc-500 dark:border-zinc-700">Create a compressed preview</div>}</div> : <div className="mt-4 grid min-h-40 place-items-center rounded-xl border border-dashed border-zinc-300 text-center text-zinc-500 dark:border-zinc-700"><div><ImageIcon className="mx-auto" size={32} /><p className="mt-3 text-sm font-black">Import media to begin</p></div></div>}
+            <div className="flex items-center justify-between gap-3">
+              <div><h3 className="text-lg font-black">Preview</h3><p className="text-xs font-semibold text-zinc-500">{active?.name || "Select a picture or video"}</p></div>
+              <div className="flex items-center gap-2">
+                <Button size="sm" variant="secondary" icon={Maximize2} onClick={() => setPreviewModalOpen(true)} disabled={!active}>Maximize</Button>
+                <Button size="sm" icon={Eye} onClick={buildPreview} disabled={!active || Boolean(job)}>Compare</Button>
+              </div>
+            </div>
+            {active ? <div className="mt-4 grid gap-3 lg:grid-cols-2"><MediaPreview asset={active} src={active.thumbnailUrl || active.objectUrl} label="Original" size={active.size} />{preview?.assetId === active.id ? <MediaPreview asset={active} src={preview.url} label="Compressed" size={preview.blob.size} /> : <div className="grid min-h-40 place-items-center rounded-xl border border-dashed border-zinc-300 text-sm font-semibold text-zinc-500 dark:border-zinc-700">Create a compressed preview</div>}</div> : <div className="mt-4 grid min-h-40 place-items-center rounded-xl border border-dashed border-zinc-300 text-center text-zinc-500 dark:border-zinc-700"><div><ImageIcon className="mx-auto" size={32} /><p className="mt-3 text-sm font-black">Import media to begin</p></div></div>}
           </Card>
 
           <Card className="p-5">
             <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-lg font-black">Selected Files</h3><p className="mt-0.5 text-xs font-semibold text-zinc-500">Showing {visibleAssets.length} of {assets.length}. More files keep importing in the background.</p></div>{hiddenAssetCount > 0 && <Badge variant="default">{hiddenAssetCount} hidden</Badge>}</div>
-            <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-5 xl:grid-cols-10">{visibleAssets.map((asset) => <button key={asset.id} type="button" onClick={() => setActiveId(asset.id)} className={`group relative overflow-hidden rounded-lg border bg-zinc-950 text-left transition duration-200 hover:-translate-y-0.5 hover:border-zinc-500 ${active?.id === asset.id ? "border-white ring-2 ring-zinc-950/20" : "border-zinc-800"}`}><span className="block aspect-square overflow-hidden bg-zinc-900">{asset.type === "video" ? <span className="grid h-full place-items-center text-white"><Film size={20} /></span> : <img src={asset.thumbnailUrl || asset.objectUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />}</span><span className="block truncate px-1.5 py-1.5 text-[9px] font-black text-white">{asset.name}</span><span role="checkbox" aria-checked={selectedIds.has(asset.id)} onClick={(event) => { event.stopPropagation(); toggleSelected(asset.id); }} className={`absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-md transition ${selectedIds.has(asset.id) ? "bg-emerald-500 text-white" : "bg-black/60 text-white group-hover:bg-white group-hover:text-zinc-950"}`}>{selectedIds.has(asset.id) ? <Check size={11} /> : <Plus size={11} />}</span></button>)}</div>
+            <div className="mt-3 grid grid-cols-4 gap-2 sm:grid-cols-5 xl:grid-cols-10">{visibleAssets.map((asset) => <button key={asset.id} type="button" onClick={() => setActiveId(asset.id)} className={`group relative overflow-hidden rounded-lg border bg-zinc-950 text-left transition duration-200 hover:-translate-y-0.5 hover:border-zinc-500 ${active?.id === asset.id ? "border-white ring-2 ring-zinc-950/20" : "border-zinc-800"}`}><span className="block aspect-square overflow-hidden bg-zinc-900">{asset.type === "video" ? <span className="grid h-full place-items-center text-white"><Film size={20} /></span> : asset.thumbnailUrl ? <img src={asset.thumbnailUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <span className="grid h-full place-items-center text-center text-[9px] font-black uppercase tracking-widest text-zinc-500"><LoaderCircle size={16} className={asset.previewStatus === "processing" ? "mb-1 animate-spin" : "mb-1"} />Preview</span>}</span><span className="block truncate px-1.5 py-1.5 text-[9px] font-black text-white">{asset.name}</span><span role="checkbox" aria-checked={selectedIds.has(asset.id)} onClick={(event) => { event.stopPropagation(); toggleSelected(asset.id); }} className={`absolute right-1 top-1 grid h-5 w-5 place-items-center rounded-md transition ${selectedIds.has(asset.id) ? "bg-emerald-500 text-white" : "bg-black/60 text-white group-hover:bg-white group-hover:text-zinc-950"}`}>{selectedIds.has(asset.id) ? <Check size={11} /> : <Plus size={11} />}</span></button>)}</div>
             {!assets.length && <button type="button" onClick={() => fileInputRef.current?.click()} className="mt-3 grid min-h-44 w-full place-items-center rounded-xl border border-dashed border-zinc-300 text-sm font-bold text-zinc-500 transition hover:border-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-950"><span><Images className="mx-auto mb-2" size={28} />Import files or a folder to start</span></button>}
             {hiddenAssetCount > 0 && <div className="mt-4 flex justify-end"><Button size="sm" variant="secondary" onClick={() => setVisibleCount((value) => Math.min(assets.length, value + PAGE_SIZE))}>Show More ({Math.min(PAGE_SIZE, hiddenAssetCount)})</Button></div>}
           </Card>
@@ -599,6 +792,63 @@ export default function ToolsPanel() {
       )}
 
       <GalleryPicker open={galleryOpen} items={galleryItems} selectedIds={gallerySelected} onClose={() => setGalleryOpen(false)} onImport={importGallerySelected} onToggle={toggleGallery} />
+      {previewModalOpen && active && (
+        <div className="badge-preview-modal fixed inset-0 z-[180] grid place-items-center bg-zinc-950/82 p-4 backdrop-blur-xl">
+          <div className="badge-preview-shell animate-studio-pop">
+            <div className="badge-preview-header">
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-widest text-[var(--flow-muted)]">Badge preview</p>
+                <h3 className="truncate text-lg font-black text-[var(--flow-text)]">{active.name}</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button size="icon" variant="secondary" icon={ChevronLeft} onClick={() => movePreview(-1)} aria-label="Previous image" />
+                <Button size="icon" variant="secondary" icon={ChevronRight} onClick={() => movePreview(1)} aria-label="Next image" />
+                <Button size="icon" variant="secondary" icon={X} onClick={() => setPreviewModalOpen(false)} aria-label="Close preview" />
+              </div>
+            </div>
+            <div className="badge-preview-controls">
+              <Button size="sm" variant="secondary" icon={Minus} onClick={() => setModalZoom((value) => Math.max(50, value - 10))}>Zoom out</Button>
+              <input type="range" min="50" max="240" step="5" value={modalZoom} onChange={(event) => setModalZoom(Number(event.target.value))} aria-label="Preview zoom" />
+              <span>{modalZoom}%</span>
+              <Button size="sm" variant="secondary" icon={Plus} onClick={() => setModalZoom((value) => Math.min(240, value + 10))}>Zoom in</Button>
+              <Button size="sm" variant="secondary" icon={RotateCcw} onClick={() => { setModalZoom(100); setModalPan({ x: 0, y: 0 }); }}>Reset</Button>
+              <button
+                type="button"
+                onPointerDown={() => setCompareHold(true)}
+                onPointerUp={() => setCompareHold(false)}
+                onPointerLeave={() => setCompareHold(false)}
+                className={`badge-compare-hold ${compareHold ? "is-active" : ""}`}
+              >
+                Hold before
+              </button>
+            </div>
+            <div className="badge-preview-grid">
+              {[
+                ["Original", active.objectUrl, active.size],
+                ["Compressed", preview?.assetId === active.id ? preview.url : "", preview?.blob?.size || 0],
+                ["Preview", compareHold ? active.objectUrl : (active.thumbnailUrl || active.objectUrl), active.size],
+              ].map(([label, src, size]) => (
+                <figure key={label} className="badge-preview-frame">
+                  <figcaption><span>{label}</span><small>{size ? formatBytes(size) : "Build compare"}</small></figcaption>
+                  {src ? (
+                    <div
+                      className="badge-preview-pan"
+                      onPointerDown={startModalPan}
+                      onPointerMove={moveModalPan}
+                      onPointerUp={endModalPan}
+                      onPointerCancel={endModalPan}
+                    >
+                      {active.type === "video" ? <video src={src} controls className="badge-preview-media" style={modalImageStyle} /> : <img src={src} alt="" className="badge-preview-media" style={modalImageStyle} draggable="false" />}
+                    </div>
+                  ) : (
+                    <div className="badge-preview-empty">Tap Compare to create compressed preview</div>
+                  )}
+                </figure>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

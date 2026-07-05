@@ -777,12 +777,15 @@ async function sanitizeWriteDocuments(documents = [], folderPath = "") {
 
 async function getWriteState() {
   const store = await readWriteStore();
-  const documents = await sanitizeWriteDocuments(store.documents, store.folderPath);
-  if (documents.length !== store.documents.length) {
-    await writeWriteStore({ ...store, documents });
+  const desktopPrefs = await readDesktopPrefs();
+  const globalFolder = resolveDownloadFolderPath(desktopPrefs.downloadFolders, "writing");
+  const folderPath = store.folderPath || globalFolder || "";
+  const documents = await sanitizeWriteDocuments(store.documents, folderPath);
+  if (folderPath !== store.folderPath || documents.length !== store.documents.length) {
+    await writeWriteStore({ ...store, folderPath, documents });
   }
   return {
-    folderPath: store.folderPath,
+    folderPath,
     currentId: store.currentId,
     documents,
   };
@@ -2043,9 +2046,11 @@ function setupWriteIpc() {
   ipcMain.handle("write:save-text", async (_event, payload = {}) => {
     const content = String(payload.content || "");
     const store = await readWriteStore();
-    if (!store.folderPath) return { needsFolder: true, ...(await getWriteState()) };
+    const desktopPrefs = await readDesktopPrefs();
+    const folderPath = store.folderPath || resolveDownloadFolderPath(desktopPrefs.downloadFolders, "writing");
+    if (!folderPath) return { needsFolder: true, ...(await getWriteState()) };
 
-    await fs.mkdir(store.folderPath, { recursive: true });
+    await fs.mkdir(folderPath, { recursive: true });
     const now = new Date().toISOString();
     const id = payload.id ? String(payload.id) : createWriteDocumentId();
     const extension = String(payload.fileName || "").toLowerCase().endsWith(".txt") ? ".txt" : ".md";
@@ -2056,7 +2061,7 @@ function setupWriteIpc() {
           payload.fileName || getWriteExcerpt(content) || "writing",
         )}`;
     const fileName = `${baseName}${extension}`;
-    const filePath = existing?.path || path.join(store.folderPath, fileName);
+    const filePath = existing?.path || path.join(folderPath, fileName);
     await fs.writeFile(filePath, content, "utf8");
 
     const document = {
@@ -2069,6 +2074,7 @@ function setupWriteIpc() {
     const documents = [document, ...store.documents.filter((doc) => doc.id !== id)].slice(0, 200);
     await writeWriteStore({
       ...store,
+      folderPath,
       currentId: id,
       documents,
     });

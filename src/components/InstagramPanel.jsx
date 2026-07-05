@@ -856,7 +856,7 @@ function DownloadAllModal({
 }
 
 /* ─── Main Component ──────────────────────────────────────────── */
-export default function InstagramPanel({ initialUrl = "" }) {
+export default function InstagramPanel({ initialUrl = "", embedded = false }) {
   const [postUrl, setPostUrl] = useState(initialUrl);
   const [loading, setLoading] = useState(false);
   const [posts, setPosts] = useState([]);
@@ -1407,7 +1407,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
 
   return (
     <>
-      <div className="flow-page grid max-w-[1536px] gap-6 lg:grid-cols-[26em_1fr]">
+      <div className={`${embedded ? "grid" : "flow-page grid"} gap-6 lg:grid-cols-[24rem_minmax(0,1fr)]`}>
         <aside className="grid content-start gap-5 panel-enter-aside">
           <Card ref={sidebarCardRef} className="flex flex-col gap-5 p-5">
             <div>
