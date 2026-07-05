@@ -113,9 +113,9 @@ function triggerBrowserDownload(blob, filename) {
 }
 
 export function downloadBlob(blob, filename, options = {}) {
-  if (!options.skipPreferredFolder && window.contentFlow?.desktop?.saveExportFile) {
+  if (!options.skipPreferredFolder && window.flow?.desktop?.saveExportFile) {
     blob.arrayBuffer()
-      .then((data) => window.contentFlow.desktop.saveExportFile("global", filename, data))
+      .then((data) => window.flow.desktop.saveExportFile("global", filename, data))
       .then((result) => {
         if (!result?.saved) triggerBrowserDownload(blob, filename);
       })

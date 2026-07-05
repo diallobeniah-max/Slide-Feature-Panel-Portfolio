@@ -268,20 +268,16 @@ export default function GridBuilder() {
     <button
       type="button"
       onClick={() => setActiveTab(value)}
-      className={`flex-1 rounded-[10px] py-2.5 text-[10px] font-black uppercase tracking-[0.12em] transition-all duration-300 ${
-        activeTab === value
-          ? "scale-[1.02] bg-white text-zinc-900 shadow-[0_4px_12px_rgba(0,0,0,0.1)] dark:bg-zinc-700 dark:text-zinc-50 dark:shadow-[0_4px_12px_rgba(0,0,0,0.3)]"
-          : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-      }`}
+      className={`flow-segmented-button ${activeTab === value ? "is-active" : ""}`}
     >
       {children}
     </button>
   );
 
   const GridTabBar = () => (
-    <div className="mx-auto w-full max-w-7xl px-5 pt-6">
-      <Card className="p-2">
-        <div className="flex gap-1 rounded-[14px] bg-zinc-100 p-1 dark:bg-zinc-800/50">
+    <div className="flow-page pb-0">
+      <Card className="p-0">
+        <div className="flow-segmented-inner">
           <TabButton value="builder">Grid Builder</TabButton>
           <TabButton value="presets">Presets</TabButton>
           <TabButton value="actions">Action Recorder</TabButton>
@@ -296,7 +292,7 @@ export default function GridBuilder() {
         <GridTabBar />
         <Suspense
           fallback={
-            <main className="mx-auto max-w-7xl px-5 py-6">
+            <main className="flow-page max-w-[1536px]">
               <Card className="p-5 text-sm font-bold text-zinc-500">Loading Action Recorder...</Card>
             </main>
           }
@@ -311,7 +307,7 @@ export default function GridBuilder() {
   return (
     <>
       <GridTabBar />
-      <main className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[22em_1fr] items-start">
+      <main className="flow-page grid max-w-[1536px] gap-6 lg:grid-cols-[22em_1fr] items-start">
       {/* ── Sidebar ───────────────────────────────────────────────── */}
       <aside className="grid content-start gap-5 panel-enter-aside">
         <Card className="p-0 overflow-hidden flex flex-col">

@@ -5,7 +5,7 @@ import englishDic from "../assets/dictionaries/en_US.dic?raw";
 const WORD_PATTERN = /[A-Za-z][A-Za-z'\u2019-]*/g;
 
 const EXTRA_WORDS = [
-  "ContentFlow",
+  "Flow",
   "Instagram",
   "YouTube",
   "TikTok",

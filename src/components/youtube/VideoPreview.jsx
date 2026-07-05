@@ -2,8 +2,10 @@ import React from 'react';
 import { Maximize, Minimize, X, Video } from 'lucide-react';
 import { extractVideoId, formatTime } from './youtubeUtils';
 
-export default function VideoPreview({ item, onUpdate }) {
+export default function VideoPreview({ item, onUpdate, layout = "list", previewScale = 100 }) {
   const videoId = extractVideoId(item.url);
+  const boxed = false;
+  const safePreviewScale = Math.min(1.5, Math.max(0.8, Number(previewScale || 100) / 100));
 
   if (item.previewMode) {
     if (!videoId) {
@@ -61,7 +63,10 @@ export default function VideoPreview({ item, onUpdate }) {
 
   return (
     <div 
-      className="relative w-28 h-[4.5rem] md:w-32 md:h-[5.5rem] shrink-0 rounded-xl overflow-hidden bg-zinc-200 dark:bg-zinc-800 cursor-pointer"
+      className={`relative shrink-0 overflow-hidden bg-zinc-200 dark:bg-zinc-800 cursor-pointer ${
+        boxed ? "aspect-video w-full rounded-2xl" : "queue-preview-thumb rounded-xl"
+      }`}
+      style={{ "--queue-preview-scale": safePreviewScale }}
       onClick={() => { if(item.status !== "fetching" && videoId) onUpdate(item.id, { previewMode: true }); }}
       title={videoId ? "Click to preview video" : "Preview available after download"}
     >

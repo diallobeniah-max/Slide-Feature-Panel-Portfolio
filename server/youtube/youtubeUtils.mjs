@@ -66,7 +66,7 @@ async function findStandaloneYtDlp() {
   }
 
   if (process.platform !== 'linux') return source;
-  const executable = join(tmpdir(), 'contentflow-yt-dlp');
+  const executable = join(tmpdir(), 'flow-yt-dlp');
   try {
     await fs.access(executable);
   } catch {
@@ -122,13 +122,23 @@ export function buildFormatSelector(quality, format, platform = 'youtube') {
   const h = heightMap[String(quality || '').replace(/p$/i, '')];
   if (platform === 'facebook' || platform === 'instagram') {
     return h
-      ? `bestvideo[height<=${h}][height>720][ext=mp4]+bestaudio/bestvideo[height<=${h}][height>720][ext=mp4]+best[acodec!=none]/best[height<=${h}][ext=mp4]/best[height<=${h}]/best`
-      : 'bestvideo[height>720][ext=mp4]+bestaudio/bestvideo[height>720][ext=mp4]+best[acodec!=none]/best[ext=mp4]/best';
+      ? `bv*[height<=${h}][ext=mp4]+ba[ext=m4a]/bv*[height<=${h}]+ba/bv*[height<=${h}]/b[height<=${h}][ext=mp4]/b[height<=${h}]/b[ext=mp4]/b`
+      : 'bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/bv*/b[height>=720][ext=mp4]/b[ext=mp4]/b';
   }
   if (h) {
     return `bestvideo[height<=${h}][ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[height<=${h}][ext=mp4]+bestaudio[ext=m4a]/best[height<=${h}][ext=mp4]/best[height<=${h}]/best`;
   }
   return 'bestvideo[ext=mp4][vcodec^=avc1]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best';
+}
+
+export function buildFallbackFormatSelector(quality, platform = 'youtube') {
+  if (quality === 'audio') return 'bestaudio/best';
+  const heightMap = { '360': 360, '480': 480, '720': 720, '1080': 1080, '1440': 1440, '2160': 2160 };
+  const h = heightMap[String(quality || '').replace(/p$/i, '')];
+  if (platform === 'facebook' || platform === 'instagram') {
+    return h ? `bv*[height<=${h}]+ba/bv*[height<=${h}]/b[height<=${h}]/bv*+ba/bv*/b[ext=mp4]/b` : 'bv*+ba/bv*/b[ext=mp4]/b';
+  }
+  return h ? `bestvideo[height<=${h}]+bestaudio/best[height<=${h}]/best` : 'bestvideo+bestaudio/best';
 }
 
 export function buildProgressiveFormatSelector(quality) {
@@ -145,6 +155,10 @@ export function buildNetworkArgs() {
     '--retries', '5',
     '--fragment-retries', '5',
     '--socket-timeout', '30',
+    '--geo-bypass',
+    '--no-check-certificates',
+    '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+    '--add-header', 'Accept-Language: en-US,en;q=0.9',
     '--no-warnings',
   ];
 }
@@ -154,11 +168,16 @@ export function getYtDlpErrorMessage(error, platform = 'video') {
   if (/login|log in|cookies|private|not available/i.test(raw) && platform === 'facebook') {
     return 'Facebook could not access this video. Make sure it is public and opens without a Facebook login.';
   }
+  if (/requested format is not available|no video formats|no formats/i.test(raw)) {
+    return 'That exact quality was not available from this link. Try Highest Available again or choose another quality.';
+  }
   const line = raw.split(/\r?\n/).reverse().find((entry) => /ERROR:/i.test(entry));
-  return (line || error?.message || 'Download failed')
+  const message = (line || error?.message || 'Download failed')
     .replace(/^.*?ERROR:\s*/i, '')
     .replace(/\s*\[generic\].*$/i, '')
     .trim();
+  if (/^Command failed:/i.test(message)) return 'The video download command failed before a usable stream was returned. Please try again.';
+  return message;
 }
 
 export function isServerlessRuntime() {

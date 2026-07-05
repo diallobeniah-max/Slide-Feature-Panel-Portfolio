@@ -22,7 +22,6 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import JSZip from "jszip";
 import { downloadBlob } from "../utils/media.js";
 import { runBrowserOcr } from "../utils/ocr.js";
 import { Badge, Button, Card, Input } from "./ui.jsx";
@@ -1196,6 +1195,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
     setGlobalPhase("loading");
     setGlobalPhaseMsg(`Building ZIP for @${post.meta?.ownerUsername || post.meta?.shortcode || "post"}...`);
 
+    const { default: JSZip } = await import("jszip");
     const zip = new JSZip();
     const folderName = `carousel_${String(posts.indexOf(post) + 1).padStart(2, "0")}_${post.meta?.ownerUsername || post.meta?.shortcode || "unknown"}`;
     const folder = zip.folder(folderName);
@@ -1256,6 +1256,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
       return;
     }
 
+    const { default: JSZip } = await import("jszip");
     const zip = new JSZip();
     const mainFolder = zip.folder("Instagram_Downloads");
     const failed = [];
@@ -1406,7 +1407,7 @@ export default function InstagramPanel({ initialUrl = "" }) {
 
   return (
     <>
-      <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[26em_1fr]">
+      <div className="flow-page grid max-w-[1536px] gap-6 lg:grid-cols-[26em_1fr]">
         <aside className="grid content-start gap-5 panel-enter-aside">
           <Card ref={sidebarCardRef} className="flex flex-col gap-5 p-5">
             <div>
@@ -2074,5 +2075,3 @@ export default function InstagramPanel({ initialUrl = "" }) {
     </>
   );
 }
-
-

@@ -3,14 +3,14 @@ import {
   Download, Trash2, Plus, Loader2, Link as LinkIcon, 
   X, List, Video, Search, Clipboard, ListVideo, Pause, Play
 } from "lucide-react";
-import { Card, Button, Badge } from "../ui";
+import { Card, Button, Badge, RangeSlider } from "../ui";
 import {
   getWebDownloadFolderHandle,
   getWebDownloadFolderPreferences,
   saveBlobToWebDownloadFolder,
 } from "../../utils/downloadFolders.js";
 
-import { getVideoPlatformLabel, isSupportedVideoUrl, isYoutubeUrl, loadHistory, saveHistory } from "./youtubeUtils";
+import { getUnsupportedVideoUrlReason, getVideoPlatformLabel, isSupportedVideoUrl, isYoutubeUrl, loadHistory, saveHistory } from "./youtubeUtils";
 import QueueItem from "./QueueItem";
 import DownloadHistory from "./DownloadHistory";
 
@@ -20,13 +20,15 @@ export default function YouTubePanel() {
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [playlistMode, setPlaylistMode] = useState(false);
+  const [queueLayout, setQueueLayout] = useState("horizontal");
+  const [queuePreviewScale, setQueuePreviewScale] = useState(100);
   
   const [globalFormat, setGlobalFormat] = useState("mp4");
   const [isAdding, setIsAdding] = useState(false);
   const queueRef = useRef(queue);
   const activeDownloadsRef = useRef(new Map());
   const [desktopPrefs, setDesktopPrefs] = useState(() =>
-    window.contentFlow?.desktop?.getPreferences ? null : getWebDownloadFolderPreferences(),
+    window.flow?.desktop?.getPreferences ? null : getWebDownloadFolderPreferences(),
   );
 
   // History state
@@ -35,15 +37,15 @@ export default function YouTubePanel() {
   useEffect(() => { setHistory(loadHistory()); }, []);
   useEffect(() => {
     const loadPrefs = () => {
-      if (window.contentFlow?.desktop?.getPreferences) {
-        window.contentFlow.desktop.getPreferences().then((prefs) => setDesktopPrefs(prefs || null)).catch(() => {});
+      if (window.flow?.desktop?.getPreferences) {
+        window.flow.desktop.getPreferences().then((prefs) => setDesktopPrefs(prefs || null)).catch(() => {});
       } else {
         setDesktopPrefs(getWebDownloadFolderPreferences());
       }
     };
     loadPrefs();
-    window.addEventListener("contentflow-download-folders-changed", loadPrefs);
-    return () => window.removeEventListener("contentflow-download-folders-changed", loadPrefs);
+    window.addEventListener("flow-download-folders-changed", loadPrefs);
+    return () => window.removeEventListener("flow-download-folders-changed", loadPrefs);
   }, []);
 
   const updateItem = useCallback((id, patch) => {
@@ -75,7 +77,7 @@ export default function YouTubePanel() {
         addSingleUrl(text);
       } else {
         window.dispatchEvent(new CustomEvent("studio-notify", {
-          detail: { title: "Invalid URL", message: "Clipboard does not contain a supported video link.", type: "warning" }
+          detail: { title: "Invalid URL", message: getUnsupportedVideoUrlReason(text), type: "warning" }
         }));
       }
     } catch (err) {
@@ -192,7 +194,7 @@ export default function YouTubePanel() {
     if (!url) return;
     if (!isSupportedVideoUrl(url)) {
       window.dispatchEvent(new CustomEvent("studio-notify", {
-        detail: { title: "Invalid URL", message: "Please enter a YouTube, Facebook, or Instagram link.", type: "error" }
+        detail: { title: "Invalid URL", message: getUnsupportedVideoUrlReason(url), type: "error" }
       }));
       return;
     }
@@ -212,7 +214,7 @@ export default function YouTubePanel() {
 
     if (urls.length === 0) {
       window.dispatchEvent(new CustomEvent("studio-notify", {
-        detail: { title: "No valid URLs", message: "No supported YouTube, Facebook, or Instagram links found in the text.", type: "error" }
+        detail: { title: "No valid URLs", message: "No supported public video links found. Try YouTube, Facebook, Instagram, Vimeo, TikTok, X/Twitter, Dailymotion, Twitch, or Reddit.", type: "error" }
       }));
       return;
     }
@@ -302,7 +304,9 @@ export default function YouTubePanel() {
 
   const getVideoGrabberFolder = useCallback(() => {
     const folders = desktopPrefs?.downloadFolders || {};
-    return folders.useVideoGrabberForAll ? folders.videoGrabber : folders.videoGrabber;
+    if (folders.useGlobalForAll && folders.global) return folders.global;
+    if (folders.useVideoGrabberForAll && folders.videoGrabber) return folders.videoGrabber;
+    return folders.videoGrabber || folders.global || "";
   }, [desktopPrefs]);
 
   const markHistoryDownloaded = useCallback((item) => {
@@ -354,22 +358,26 @@ export default function YouTubePanel() {
         const elapsed = (Date.now() - startedAt) / 1000;
         const current = q.progress || 0;
         const planned = Math.round((elapsed / estimatedSeconds) * 92);
-        const drift = elapsed > estimatedSeconds ? Math.min(98, current + 1) : planned;
-        const progress = Math.min(98, Math.max(current, drift));
+        const drift = elapsed > estimatedSeconds ? Math.min(99, current + 1) : planned;
+        const progress = Math.min(99, Math.max(current, drift));
         return {
           ...q,
           progress,
-          eta: formatEta(Math.max(1, estimatedSeconds - elapsed)),
-          stage: progress < 8 ? "Preparing..." : "Processing video...",
+          eta: progress >= 98 ? "Still working..." : formatEta(Math.max(1, estimatedSeconds - elapsed)),
+          stage: progress >= 98 ? "Finalizing high-quality video..." : progress < 8 ? "Preparing..." : "Processing video...",
         };
       }));
     }, 900);
 
     try {
       let webDirectoryHandle = null;
-      if (!window.contentFlow?.platform?.isElectron && desktopPrefs?.downloadFolders?.videoGrabber) {
+      if (!window.flow?.platform?.isElectron && (desktopPrefs?.downloadFolders?.global || desktopPrefs?.downloadFolders?.videoGrabber)) {
         try {
-          webDirectoryHandle = await getWebDownloadFolderHandle("videoGrabber", true);
+          const folders = desktopPrefs?.downloadFolders || {};
+          webDirectoryHandle = await getWebDownloadFolderHandle(
+            folders.useGlobalForAll && folders.global ? "global" : "videoGrabber",
+            true,
+          );
         } catch {
           window.dispatchEvent(new CustomEvent("studio-notify", {
             detail: { title: "Folder Permission Needed", message: "The download will use your browser's normal download location this time.", type: "warning" },
@@ -413,6 +421,7 @@ export default function YouTubePanel() {
           stage: "Saved",
           downloadKind: null,
           savedPath: data.path || "",
+          savedFilename: data.filename || safeName,
         } : q));
         markHistoryDownloaded(item);
         window.dispatchEvent(new CustomEvent("studio-notify", {
@@ -437,6 +446,26 @@ export default function YouTubePanel() {
       setQueue(prev => prev.map(q => q.id === id ? { ...q, status: "error", downloadKind: null, eta: "", error: err.message } : q));
     }
   }, [getVideoGrabberFolder, markHistoryDownloaded, readProgressStream]);
+
+  const openSavedVideo = useCallback(async (filePath) => {
+    if (!filePath || !window.flow?.desktop?.openPath) return;
+    const result = await window.flow.desktop.openPath(filePath);
+    if (!result?.opened) {
+      window.dispatchEvent(new CustomEvent("studio-notify", {
+        detail: { title: "Could Not Open Video", message: result?.message || "The saved file could not be opened.", type: "error" },
+      }));
+    }
+  }, []);
+
+  const openSavedFolder = useCallback(async (filePath) => {
+    if (!filePath || !window.flow?.desktop?.showItemInFolder) return;
+    const result = await window.flow.desktop.showItemInFolder(filePath);
+    if (!result?.revealed) {
+      window.dispatchEvent(new CustomEvent("studio-notify", {
+        detail: { title: "Could Not Open Folder", message: result?.message || "The saved file could not be found.", type: "error" },
+      }));
+    }
+  }, []);
 
   const downloadItem = useCallback(async (id) => {
     const existing = activeDownloadsRef.current.get(id);
@@ -523,7 +552,7 @@ export default function YouTubePanel() {
   const doneCount = queue.filter(q => q.status === "done").length;
 
   return (
-    <main className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[22em_1fr] items-start w-full">
+    <main className="flow-page grid max-w-[1536px] gap-6 lg:grid-cols-[22em_1fr] items-start w-full">
       {/* ── Left: Config ─────────────────────────────────── */}
       <aside className="grid content-start gap-5 panel-enter-aside w-full">
         <Card className="p-6 flex flex-col gap-6">
@@ -533,7 +562,7 @@ export default function YouTubePanel() {
               Video Grabber
             </h2>
             <p className="mt-2 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-              YouTube, Facebook, and Instagram links.
+              YouTube, Facebook, Instagram, Vimeo, TikTok, X/Twitter, Dailymotion, Twitch, and Reddit links.
             </p>
           </div>
 
@@ -553,7 +582,7 @@ export default function YouTubePanel() {
             <div className="space-y-3 relative transition-all duration-300">
               {!bulkMode ? (
                 <div className="relative flex items-center w-full">
-                  <input type="url" placeholder="Paste YouTube, Facebook, or Instagram URL..."
+                  <input type="url" placeholder="Paste a public video URL..."
                     value={urlInput} onChange={e => setUrlInput(e.target.value)}
                     onKeyDown={e => e.key === "Enter" && addSingleUrl()}
                     className="w-full pl-10 pr-12 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 transition-all focus:border-zinc-500 focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:focus:ring-white/5 font-medium shadow-inner-sm" />
@@ -564,7 +593,7 @@ export default function YouTubePanel() {
                   </button>
                 </div>
               ) : (
-                <textarea rows={5} placeholder="Paste multiple YouTube, Facebook, or Instagram URLs here..."
+                <textarea rows={5} placeholder="Paste multiple public video URLs here..."
                   value={bulkText} onChange={e => setBulkText(e.target.value)}
                   className="w-full px-4 py-3 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm text-zinc-900 dark:text-zinc-100 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 transition-all focus:border-zinc-500 focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:focus:ring-white/5 font-mono resize-none shadow-inner-sm min-h-[120px]" />
               )}
@@ -658,14 +687,43 @@ export default function YouTubePanel() {
 
       {/* ── Right: Queue ─────────────────────────────────── */}
       <section className="grid content-start gap-5 panel-enter-main w-full">
-        <div className="flex justify-between items-center px-2">
+        <div className="flex flex-wrap justify-between items-center gap-3 px-2">
           <div className="flex items-center gap-3">
             <div className={`w-2 h-2 rounded-full ${queue.length > 0 ? "bg-zinc-900 dark:bg-white/60 animate-pulse" : "bg-zinc-300 dark:bg-zinc-700"}`} />
             <h3 className="text-xs font-bold uppercase tracking-widest text-zinc-500 flex items-center gap-2">
               Download Queue <Badge variant="default">{queue.length}</Badge>
             </h3>
           </div>
+          {queue.length > 0 && (
+            <label className="group flex min-w-[14rem] cursor-pointer items-center gap-3 rounded-2xl border border-zinc-200 bg-white/80 px-3 py-2 shadow-sm transition hover:border-zinc-300 hover:shadow-md dark:border-white/10 dark:bg-[#252331]/85 dark:hover:border-white/20">
+              <ListVideo size={16} className="text-zinc-500 transition group-hover:text-zinc-900 dark:text-zinc-400 dark:group-hover:text-white" />
+              <span className="text-[10px] font-black uppercase tracking-widest text-zinc-500 dark:text-zinc-400">
+                Display
+              </span>
+              <select
+                value={queueLayout}
+                onChange={(event) => setQueueLayout(event.target.value)}
+                className="ml-auto min-h-9 cursor-pointer rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-zinc-900 outline-none transition focus:border-zinc-400 focus:ring-4 focus:ring-zinc-950/5 dark:border-white/10 dark:bg-[#181622] dark:text-zinc-100 dark:focus:ring-white/10"
+              >
+                <option value="horizontal">Large horizontal</option>
+              </select>
+            </label>
+          )}
         </div>
+
+        {queue.length > 0 && (
+          <div className="rounded-[24px] border border-zinc-200/70 bg-white/70 p-4 shadow-sm dark:border-white/10 dark:bg-[#211f2d]/75">
+            <RangeSlider
+              label="Preview magnification"
+              min={80}
+              max={150}
+              step={5}
+              value={queuePreviewScale}
+              valueLabel={`${queuePreviewScale}%`}
+              onChange={(event) => setQueuePreviewScale(Number(event.target.value))}
+            />
+          </div>
+        )}
 
         {queue.length === 0 ? (
           <div className="h-[400px] border-2 border-dashed rounded-[32px] flex flex-col items-center justify-center space-y-6 border-zinc-200 dark:border-zinc-800 bg-white/50 dark:bg-zinc-900/30 w-full px-4 text-center">
@@ -677,7 +735,7 @@ export default function YouTubePanel() {
                 No Videos Yet
               </p>
               <p className="text-xs text-zinc-500 font-medium uppercase tracking-widest">
-                Paste YouTube, Facebook, or Instagram links to fetch metadata
+                Paste public video links to fetch metadata
               </p>
               <p className="text-[10px] text-zinc-400 max-w-xs mx-auto">
                 Supports quality selection, trimming, YouTube playlists, and subtitles when available.
@@ -685,11 +743,13 @@ export default function YouTubePanel() {
             </div>
           </div>
         ) : (
-          <div className="space-y-4 w-full">
+          <div className="grid w-full gap-4">
             {queue.map(item => (
               <QueueItem key={item.id} item={item}
                 onRemove={removeItem} onUpdate={updateItem} onDownload={downloadItem}
-                onPause={pauseDownload} onResume={downloadItem} onDownloadSubtitles={downloadSubtitles} />
+                onPause={pauseDownload} onResume={downloadItem} onDownloadSubtitles={downloadSubtitles}
+                onOpenVideo={openSavedVideo} onOpenFolder={openSavedFolder}
+                layout={queueLayout} previewScale={queuePreviewScale} />
             ))}
           </div>
         )}

@@ -14,15 +14,15 @@ import {
   Upload,
 } from "lucide-react";
 import { Badge, Button, Card } from "../ui.jsx";
-import ContentFlowSelect from "../ui/ContentFlowSelect.jsx";
+import FlowSelect from "../ui/FlowSelect.jsx";
 import VirtualizedGalleryLibrary from "../gallery/VirtualizedGalleryLibrary.jsx";
 import GalleryViewer from "../gallery/GalleryViewer.jsx";
 import { sortGalleryItems } from "../../utils/galleryGrouping.js";
 import { formatShortPath } from "../../utils/mediaTypes.js";
 import { startIndexedFileDrag } from "../../utils/fileDrag.js";
 
-const SHELL = "mx-auto grid w-full max-w-[1536px] min-w-0 gap-5 overflow-x-hidden px-5 py-6";
-const ASSETS_STATE_KEY = "contentflow-assets-view-state-v1";
+const SHELL = "flow-page grid w-full max-w-[1536px] min-w-0 gap-5 overflow-x-hidden";
+const ASSETS_STATE_KEY = "flow-assets-view-state-v1";
 const ASSETS_BATCH_SIZE = 40;
 const GROUP_PREVIEW_BATCH_SIZE = 20;
 
@@ -60,22 +60,22 @@ function hasExternalFiles(event) {
   return Array.from(event.dataTransfer?.types || []).includes("Files");
 }
 
-function hasContentFlowFiles(event) {
-  return Array.from(event.dataTransfer?.types || []).includes("contentflow/media-id");
+function hasFlowFiles(event) {
+  return Array.from(event.dataTransfer?.types || []).includes("flow/media-id");
 }
 
-function getDroppedContentFlowFiles(event) {
-  const ids = String(event.dataTransfer?.getData("contentflow/media-id") || "")
+function getDroppedFlowFiles(event) {
+  const ids = String(event.dataTransfer?.getData("flow/media-id") || "")
     .split(",")
     .map((id) => id.trim())
     .filter(Boolean);
-  const sourceKind = String(event.dataTransfer?.getData("contentflow/source-kind") || "gallery");
+  const sourceKind = String(event.dataTransfer?.getData("flow/source-kind") || "gallery");
   return { ids, sourceKind };
 }
 
 function getDroppedFilePaths(event) {
   return Array.from(event.dataTransfer?.files || [])
-    .map((file) => file.path || window.contentFlowFiles?.getDroppedFilePath?.(file) || "")
+    .map((file) => file.path || window.flowFiles?.getDroppedFilePath?.(file) || "")
     .filter(Boolean);
 }
 
@@ -92,7 +92,7 @@ function getPreviewWindow(items, index, size = GROUP_PREVIEW_BATCH_SIZE) {
 }
 
 export default function LocalAssets() {
-  const api = window.contentFlowAssets || null;
+  const api = window.flowAssets || null;
   const isElectron = Boolean(api);
   const savedState = useMemo(loadAssetsViewState, []);
   const [folderPath, setFolderPath] = useState(savedState.folderPath || "");
@@ -273,7 +273,7 @@ export default function LocalAssets() {
   async function addIndexedFilesToSelectedGroup(sourceKind, ids) {
     if (!api?.addIndexedFilesToGroup || !selectedGroup?.id) return;
     if (!ids.length) {
-      notify("Drop Skipped", "No ContentFlow gallery files were included in that drag.", "warning");
+      notify("Drop Skipped", "No Flow gallery files were included in that drag.", "warning");
       return;
     }
     const nextGroups = await api.addIndexedFilesToGroup(selectedGroup.id, sourceKind, ids);
@@ -305,27 +305,27 @@ export default function LocalAssets() {
   }
 
   function handleGroupDragEnter(event) {
-    if (!hasExternalFiles(event) && !hasContentFlowFiles(event)) return;
+    if (!hasExternalFiles(event) && !hasFlowFiles(event)) return;
     event.preventDefault();
     setGroupDropActive(true);
   }
 
   function handleGroupDragOver(event) {
-    if (!hasExternalFiles(event) && !hasContentFlowFiles(event)) return;
+    if (!hasExternalFiles(event) && !hasFlowFiles(event)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = selectedGroup ? "copy" : "none";
     setGroupDropArmed(true);
   }
 
   function handleGroupDragLeave(event) {
-    if (!hasExternalFiles(event) && !hasContentFlowFiles(event)) return;
+    if (!hasExternalFiles(event) && !hasFlowFiles(event)) return;
     event.preventDefault();
     setGroupDropArmed(false);
     setGroupDropActive(false);
   }
 
   function handleGroupDrop(event) {
-    if (!hasExternalFiles(event) && !hasContentFlowFiles(event)) return;
+    if (!hasExternalFiles(event) && !hasFlowFiles(event)) return;
     event.preventDefault();
     setGroupDropActive(false);
     setGroupDropArmed(false);
@@ -333,8 +333,8 @@ export default function LocalAssets() {
       notify("Create a group first", "Name a group before dropping files into it.", "error");
       return;
     }
-    if (hasContentFlowFiles(event)) {
-      const { ids, sourceKind } = getDroppedContentFlowFiles(event);
+    if (hasFlowFiles(event)) {
+      const { ids, sourceKind } = getDroppedFlowFiles(event);
       addIndexedFilesToSelectedGroup(sourceKind, ids);
       return;
     }
@@ -463,7 +463,7 @@ export default function LocalAssets() {
               className="min-w-0 flex-1 bg-transparent text-sm font-medium text-zinc-950 outline-none placeholder:text-zinc-400 dark:text-white"
             />
           </label>
-          <ContentFlowSelect
+          <FlowSelect
             value={filter}
             onChange={(value) => pushState({ filter: value, viewerIndex: -1 })}
             icon={Sparkles}
@@ -476,7 +476,7 @@ export default function LocalAssets() {
               { value: "documents", label: "Documents" },
             ]}
           />
-          <ContentFlowSelect
+          <FlowSelect
             value={sortMode}
             onChange={(value) => pushState({ sortMode: value, viewerIndex: -1 })}
             icon={Grid2X2}
@@ -694,7 +694,7 @@ export default function LocalAssets() {
             <FileArchive className="mx-auto text-zinc-400" size={36} />
             <h2 className="mt-4 text-2xl font-black tracking-tight">Select a design folder</h2>
             <p className="mt-2 text-sm font-medium text-zinc-500">
-              ContentFlow will index PSD, Affinity, images, videos, and documents without modifying originals.
+              Flow will index PSD, Affinity, images, videos, and documents without modifying originals.
             </p>
             <Button className="mt-5" icon={FolderOpen} onClick={selectFolder}>
               Select Folder

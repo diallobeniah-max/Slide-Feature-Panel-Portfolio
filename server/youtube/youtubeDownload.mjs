@@ -1,5 +1,5 @@
-import { parseBody, json, ensureBinaries, execFileAsync, buildFormatSelector, buildProgressiveFormatSelector, buildNetworkArgs, cleanupFiles, getYtDlpErrorMessage, isServerlessRuntime } from './youtubeUtils.mjs';
-import { getVideoPlatform, isSupportedVideoUrl, normalizeVideoUrl } from './youtubeValidation.mjs';
+import { parseBody, json, ensureBinaries, execFileAsync, buildFormatSelector, buildFallbackFormatSelector, buildProgressiveFormatSelector, buildNetworkArgs, cleanupFiles, getYtDlpErrorMessage, isServerlessRuntime } from './youtubeUtils.mjs';
+import { getVideoPlatform, getUnsupportedVideoUrlReason, isSupportedVideoUrl, normalizeVideoUrl } from './youtubeValidation.mjs';
 import { tmpdir } from 'node:os';
 import { basename, extname, join, resolve } from 'node:path';
 import { promises as fs, createReadStream } from 'node:fs';
@@ -108,6 +108,38 @@ function findCompletedOutput(files, prefix) {
   );
 }
 
+async function runYtDlpDownload(ytdlpPath, baseArgs, selectors, outputTemplate, url, options) {
+  let lastError = null;
+  for (const selector of selectors.filter(Boolean)) {
+    const args = [...baseArgs, '-f', selector, '-o', outputTemplate, '--no-playlist', url];
+    try {
+      await execFileAsync(ytdlpPath, args, options);
+      return selector;
+    } catch (error) {
+      lastError = error;
+      await cleanupPartialOutputs(outputTemplate);
+    }
+  }
+  throw lastError || new Error('Download failed');
+}
+
+async function cleanupPartialOutputs(outputTemplate) {
+  const folder = outputTemplate.includes('/') || outputTemplate.includes('\\')
+    ? outputTemplate.replace(/[\\/][^\\/]*$/, '')
+    : '.';
+  const prefix = outputTemplate.split(/[\\/]/).pop().split('%')[0];
+  try {
+    const files = await fs.readdir(folder);
+    await cleanupFiles(
+      ...files
+        .filter((file) => file.startsWith(prefix) && (file.endsWith('.part') || file.endsWith('.ytdl') || file.endsWith('.temp')))
+        .map((file) => join(folder, file)),
+    );
+  } catch {
+    /* ignore retry cleanup */
+  }
+}
+
 export async function handleDownload(req, res) {
   let platform = 'video';
   const processController = new AbortController();
@@ -121,7 +153,7 @@ export async function handleDownload(req, res) {
   try {
     const { url, start, end, format = 'mp4', quality = 'best', folderPath = '', fileName = '', downloadId = '' } = await parseBody(req);
     if (!url) return json(res, 400, { error: 'Missing url' });
-    if (!isSupportedVideoUrl(url)) return json(res, 400, { error: 'Invalid video URL. Paste a YouTube, Facebook, or Instagram link.' });
+    if (!isSupportedVideoUrl(url)) return json(res, 400, { error: getUnsupportedVideoUrlReason(url) });
 
     if (start != null && start < 0) return json(res, 400, { error: 'Start time cannot be negative.' });
     if (end != null && start != null && end <= start) return json(res, 400, { error: 'End time must be after start time.' });
@@ -136,6 +168,10 @@ export async function handleDownload(req, res) {
     const outId = sanitizeDownloadId(downloadId);
     const isAudio = quality === 'audio';
     const fmtSelector = buildFormatSelector(quality, format, platform);
+    const fallbackSelector = buildFallbackFormatSelector(quality, platform);
+    const progressiveSelector = platform === 'facebook' || platform === 'instagram' ? buildProgressiveFormatSelector(quality) : '';
+    const formatSelectors = [fmtSelector, fallbackSelector, progressiveSelector, 'b[ext=mp4]/b']
+      .filter((selector, index, list) => selector && list.indexOf(selector) === index);
     const mergeFormat = isAudio ? 'mp4' : (format === 'mp3' ? 'mp4' : format);
     const outExt = isAudio || format === 'mp3' ? 'mp3' : format;
 
@@ -152,8 +188,8 @@ export async function handleDownload(req, res) {
 
     if (needsTrim) {
       const rawPath = join(tmpDir, `${outId}_raw.%(ext)s`);
-      const dlArgs = [...buildNetworkArgs(), '-f', fmtSelector, '--merge-output-format', mergeFormat, '-o', rawPath, '--no-playlist', normalizedUrl];
-      await execFileAsync(ytdlpPath, dlArgs, { timeout: 300_000, maxBuffer: 50 * 1024 * 1024, signal: processController.signal });
+      const dlArgs = [...buildNetworkArgs(), '--merge-output-format', mergeFormat];
+      await runYtDlpDownload(ytdlpPath, dlArgs, formatSelectors, rawPath, normalizedUrl, { timeout: 300_000, maxBuffer: 50 * 1024 * 1024, signal: processController.signal });
 
       const files = await fs.readdir(tmpDir);
       const rawFile = findCompletedOutput(files, `${outId}_raw`);
@@ -197,11 +233,10 @@ export async function handleDownload(req, res) {
       stream.on('end', () => cleanupFiles(rawFullPath, trimmedPath));
     } else {
       const outPath = join(tmpDir, `${outId}.%(ext)s`);
-      const dlArgs = [...buildNetworkArgs(), '-f', fmtSelector, '--merge-output-format', isAudio ? 'mp3' : mergeFormat, '-o', outPath, '--no-playlist'];
+      const dlArgs = [...buildNetworkArgs(), '--merge-output-format', isAudio ? 'mp3' : mergeFormat];
       if (isAudio || format === 'mp3') dlArgs.push('--extract-audio', '--audio-format', 'mp3');
-      dlArgs.push(normalizedUrl);
 
-      await execFileAsync(ytdlpPath, dlArgs, { timeout: 300_000, maxBuffer: 50 * 1024 * 1024, signal: processController.signal });
+      await runYtDlpDownload(ytdlpPath, dlArgs, formatSelectors, outPath, normalizedUrl, { timeout: 300_000, maxBuffer: 50 * 1024 * 1024, signal: processController.signal });
 
       const files = await fs.readdir(tmpDir);
       const outFile = findCompletedOutput(files, outId);

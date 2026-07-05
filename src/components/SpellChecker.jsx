@@ -163,10 +163,10 @@ export default function SpellChecker() {
   const [selection, setSelection] = useState(null);
   const [activeSelection, setActiveSelection] = useState(null);
   const [defaultMode, setDefaultMode] = useState(() =>
-    readSetting("contentflow-ocr-default-mode", "fast"),
+    readSetting("flow-ocr-default-mode", "fast"),
   );
   const [preprocessing, setPreprocessing] = useState(
-    () => readSetting("contentflow-ocr-preprocess", "true") !== "false",
+    () => readSetting("flow-ocr-preprocess", "true") !== "false",
   );
 
   const fileInputRef = useRef(null);
@@ -192,11 +192,11 @@ export default function SpellChecker() {
 
   useEffect(() => {
     const syncSettings = () => {
-      setDefaultMode(readSetting("contentflow-ocr-default-mode", "fast"));
-      setPreprocessing(readSetting("contentflow-ocr-preprocess", "true") !== "false");
+      setDefaultMode(readSetting("flow-ocr-default-mode", "fast"));
+      setPreprocessing(readSetting("flow-ocr-preprocess", "true") !== "false");
     };
-    window.addEventListener("contentflow-settings-changed", syncSettings);
-    return () => window.removeEventListener("contentflow-settings-changed", syncSettings);
+    window.addEventListener("flow-settings-changed", syncSettings);
+    return () => window.removeEventListener("flow-settings-changed", syncSettings);
   }, []);
 
   useEffect(() => {
@@ -354,7 +354,7 @@ export default function SpellChecker() {
 
   function saveText() {
     if (!ocrText.trim()) return;
-    const baseName = (imageName || "contentflow-ocr").replace(/\.[^.]+$/, "");
+    const baseName = (imageName || "flow-ocr").replace(/\.[^.]+$/, "");
     downloadBlob(new Blob([ocrText], { type: "text/plain;charset=utf-8" }), `${baseName}.txt`);
     notify("Text Saved", `${baseName}.txt was exported.`);
   }
@@ -414,7 +414,7 @@ export default function SpellChecker() {
   const visibleIssues = viewMode === "detailed" ? issues : issues.slice(0, 8);
 
   return (
-    <main className="mx-auto grid max-w-7xl items-start gap-6 px-5 py-6 lg:grid-cols-[23em_1fr]">
+    <main className="flow-page grid max-w-[1536px] items-start gap-6 lg:grid-cols-[23em_1fr]">
       <aside className="grid content-start gap-5 panel-enter-aside">
         <Card className="flex flex-col gap-5 p-6">
           <div>

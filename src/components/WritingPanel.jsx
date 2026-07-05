@@ -44,8 +44,8 @@ const FONT_FAMILIES = [
   { value: "serif", label: "Serif" },
   { value: "monospace", label: "Mono" },
 ];
-const WRITE_STATE_KEY = "contentflow-write-state-v1";
-const WRITE_COMMAND_ORDER_KEY = "contentflow-write-command-order-v1";
+const WRITE_STATE_KEY = "flow-write-state-v1";
+const WRITE_COMMAND_ORDER_KEY = "flow-write-command-order-v1";
 const WRITE_HISTORY_LIMIT = 60;
 const IMAGE_WIDTHS = [240, 320, 420, 560, 720];
 const WRITE_COMMANDS = [
@@ -779,24 +779,24 @@ export default function WritingPanel() {
     localStorage.setItem(WRITE_STATE_KEY, JSON.stringify(nextState));
     const hasUnsaved = Boolean(content.trim());
     window.dispatchEvent(
-      new CustomEvent("contentflow-unsaved-state", {
+      new CustomEvent("flow-unsaved-state", {
         detail: { source: "write", hasUnsaved },
       }),
     );
-    window.contentFlow?.appState?.setUnsaved?.(hasUnsaved, "write");
+    window.flow?.appState?.setUnsaved?.(hasUnsaved, "write");
   }, [content, currentAutosaveId, fileName, fontFamily, fontSize, isMarkdown, isPreview, textAlign]);
 
   useEffect(() => {
     let cancelled = false;
     async function loadAutosaveState() {
-      const state = await window.contentFlow?.write?.getState?.();
+      const state = await window.flow?.write?.getState?.();
       if (cancelled || !state) return;
       setAutosaveFolder(state.folderPath || "");
       setAutosaveDocs(state.documents || []);
       setCurrentAutosaveId((current) => current || state.currentId || "");
       if (!state.folderPath && !hasAskedForAutosaveFolder) {
         setHasAskedForAutosaveFolder(true);
-        const selected = await window.contentFlow?.write?.selectFolder?.();
+        const selected = await window.flow?.write?.selectFolder?.();
         if (cancelled || !selected || selected.canceled) return;
         setAutosaveFolder(selected.folderPath || "");
         setAutosaveDocs(selected.documents || []);
@@ -809,12 +809,12 @@ export default function WritingPanel() {
   }, [hasAskedForAutosaveFolder]);
 
   useEffect(() => {
-    if (!content.trim() || !window.contentFlow?.write?.saveText) return undefined;
+    if (!content.trim() || !window.flow?.write?.saveText) return undefined;
     const timer = window.setTimeout(async () => {
       let state = { folderPath: autosaveFolder };
       if (!state.folderPath && !hasAskedForAutosaveFolder) {
         setHasAskedForAutosaveFolder(true);
-        state = await window.contentFlow.write.selectFolder();
+        state = await window.flow.write.selectFolder();
         if (!state || state.canceled) return;
         setAutosaveFolder(state.folderPath || "");
         setAutosaveDocs(state.documents || []);
@@ -822,7 +822,7 @@ export default function WritingPanel() {
       if (!state.folderPath && !autosaveFolder) return;
 
       setAutosaveStatus("Saving...");
-      const saved = await window.contentFlow.write.saveText({
+      const saved = await window.flow.write.saveText({
         id: currentAutosaveId,
         content,
         fileName,
@@ -866,8 +866,8 @@ export default function WritingPanel() {
 
   useEffect(() => {
     const syncWriteCommands = () => setCommandOrder(loadWriteCommandOrder());
-    window.addEventListener("contentflow-write-commands-changed", syncWriteCommands);
-    return () => window.removeEventListener("contentflow-write-commands-changed", syncWriteCommands);
+    window.addEventListener("flow-write-commands-changed", syncWriteCommands);
+    return () => window.removeEventListener("flow-write-commands-changed", syncWriteCommands);
   }, []);
 
   useEffect(() => {
@@ -1233,7 +1233,7 @@ export default function WritingPanel() {
   }
 
   async function chooseAutosaveFolder() {
-    const selected = await window.contentFlow?.write?.selectFolder?.();
+    const selected = await window.flow?.write?.selectFolder?.();
     if (!selected || selected.canceled) return;
     setAutosaveFolder(selected.folderPath || "");
     setAutosaveDocs(selected.documents || []);
@@ -1241,7 +1241,7 @@ export default function WritingPanel() {
   }
 
   async function openSavedText(id) {
-    const loaded = await window.contentFlow?.write?.loadText?.(id);
+    const loaded = await window.flow?.write?.loadText?.(id);
     if (!loaded?.found) return;
     const loadedContent = loaded.content || "";
     setContent(loadedContent);
@@ -1299,7 +1299,7 @@ export default function WritingPanel() {
     if (!Number.isFinite(start) || !Number.isFinite(end)) return;
     draggedImageBlockRef.current = { start, end };
     event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", "contentflow-write-image");
+    event.dataTransfer.setData("text/plain", "flow-write-image");
   }
 
   function handlePreviewImageDragOver(event) {
@@ -1617,7 +1617,7 @@ export default function WritingPanel() {
   );
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:min-h-[calc(100vh-5.5rem)] lg:grid-cols-[26em_minmax(0,1fr)]">
+    <div className="flow-page grid max-w-[1536px] gap-6 lg:min-h-[calc(100vh-5.5rem)] lg:grid-cols-[26em_minmax(0,1fr)]">
       <aside
         className="grid auto-rows-max content-start gap-5 panel-enter-aside lg:max-h-[calc(100vh-6.5rem)] lg:overflow-y-auto lg:pr-1"
         onScroll={(event) => {
@@ -1632,7 +1632,7 @@ export default function WritingPanel() {
       </aside>
 
       <FloatingToolPanel
-        storageKey="contentflow-write-floating-panel"
+        storageKey="flow-write-floating-panel"
         title="Writing Tools"
         eyebrow="Write"
         open={isControlPanelOpen}

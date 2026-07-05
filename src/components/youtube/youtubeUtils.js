@@ -18,6 +18,28 @@ export const formatBytes = (b) => {
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be']);
 const INSTAGRAM_HOSTS = new Set(['instagram.com', 'www.instagram.com', 'm.instagram.com']);
 const FACEBOOK_HOSTS = new Set(['facebook.com', 'www.facebook.com', 'm.facebook.com', 'mbasic.facebook.com', 'web.facebook.com', 'fb.watch', 'fb.com', 'www.fb.com', 'l.facebook.com', 'lm.facebook.com']);
+const EXTRA_VIDEO_HOSTS = new Map([
+  ['vimeo.com', 'Vimeo'],
+  ['www.vimeo.com', 'Vimeo'],
+  ['player.vimeo.com', 'Vimeo'],
+  ['tiktok.com', 'TikTok'],
+  ['www.tiktok.com', 'TikTok'],
+  ['vm.tiktok.com', 'TikTok'],
+  ['twitter.com', 'X'],
+  ['www.twitter.com', 'X'],
+  ['x.com', 'X'],
+  ['www.x.com', 'X'],
+  ['dailymotion.com', 'Dailymotion'],
+  ['www.dailymotion.com', 'Dailymotion'],
+  ['dai.ly', 'Dailymotion'],
+  ['twitch.tv', 'Twitch'],
+  ['www.twitch.tv', 'Twitch'],
+  ['clips.twitch.tv', 'Twitch'],
+  ['reddit.com', 'Reddit'],
+  ['www.reddit.com', 'Reddit'],
+  ['v.redd.it', 'Reddit'],
+]);
+const UNSUPPORTED_STREAMING_HOSTS = new Set(['movish.net', 'www.movish.net']);
 
 function parseUrl(url) {
   try {
@@ -40,6 +62,7 @@ export const getVideoPlatform = (url) => {
   if (YOUTUBE_HOSTS.has(host)) return 'youtube';
   if (INSTAGRAM_HOSTS.has(host)) return 'instagram';
   if (FACEBOOK_HOSTS.has(host)) return 'facebook';
+  if (EXTRA_VIDEO_HOSTS.has(host)) return EXTRA_VIDEO_HOSTS.get(host).toLowerCase();
   return null;
 };
 
@@ -50,10 +73,24 @@ export const getVideoPlatformLabel = (urlOrPlatform) => {
   if (platform === 'youtube') return 'YouTube';
   if (platform === 'instagram') return 'Instagram';
   if (platform === 'facebook') return 'Facebook';
+  if (platform === 'x') return 'X';
+  if (['vimeo', 'tiktok', 'dailymotion', 'twitch', 'reddit'].includes(platform)) {
+    return platform[0].toUpperCase() + platform.slice(1);
+  }
   return 'Video';
 };
 
 export const isSupportedVideoUrl = (url) => Boolean(getVideoPlatform(url));
+
+export const getUnsupportedVideoUrlReason = (url) => {
+  const u = parseUrl(url);
+  if (!u) return "Paste a valid video URL.";
+  const host = u.hostname.toLowerCase();
+  if (UNSUPPORTED_STREAMING_HOSTS.has(host)) {
+    return "This looks like a copyrighted streaming episode site, so Flow cannot download from it. Use a public or user-owned video link instead.";
+  }
+  return "Try YouTube, Facebook, Instagram, Vimeo, TikTok, X/Twitter, Dailymotion, Twitch, or Reddit.";
+};
 
 export const isValidYoutubeUrl = isYoutubeUrl;
 

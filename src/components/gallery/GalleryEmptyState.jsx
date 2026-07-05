@@ -25,7 +25,7 @@ export default function GalleryEmptyState({ isElectron, onSelectFolder }) {
         </h2>
         <p className="mt-3 text-sm font-medium leading-relaxed text-zinc-500">
           {isElectron
-            ? "ContentFlow builds a read-only, offline media library from your Windows folders. Files are scanned locally and never renamed, moved, or uploaded."
+            ? "Flow builds a read-only, offline media library from your Windows folders. Files are scanned locally and never renamed, moved, or uploaded."
             : "The web version cannot recursively read Windows folders. Open the Electron desktop app to use the offline local gallery."}
         </p>
         {isElectron && (

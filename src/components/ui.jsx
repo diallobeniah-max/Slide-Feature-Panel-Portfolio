@@ -3,7 +3,7 @@ import React from "react";
 export function Card({ children, className = "", ...props }) {
   return (
     <div
-      className={`bg-white/95 dark:bg-zinc-900/95 border border-zinc-200/50 dark:border-zinc-800/80 rounded-[24px] shadow-sm shadow-zinc-950/5 dark:shadow-black/20 overflow-hidden transition-all duration-300 ${className}`}
+      className={`bg-[var(--flow-card)] dark:bg-[var(--flow-card)] border border-[var(--flow-border)] rounded-[24px] shadow-sm shadow-[var(--flow-shadow)] overflow-hidden transition-[background-color,border-color,box-shadow,transform] duration-300 ${className}`}
       {...props}
     >
       {children}
@@ -23,26 +23,26 @@ export function Button({
   ...props
 }) {
   const baseStyles =
-    "inline-flex items-center justify-center gap-2 font-bold transition-all duration-200 ease-out active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-600 rounded-2xl";
+      "inline-flex items-center justify-center gap-2.5 font-extrabold transition-all duration-200 ease-out hover:-translate-y-px active:translate-y-0 active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none outline-none focus-visible:ring-2 focus-visible:ring-[var(--pumpkin-400)] rounded-[var(--flow-radius-button)]";
 
   const variants = {
     primary:
-      "bg-zinc-950 text-white hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-200 shadow-md hover:shadow-lg",
+      "bg-[linear-gradient(135deg,var(--pumpkin-500),var(--pumpkin-700))] text-white hover:brightness-105 shadow-md shadow-[rgba(204,88,0,0.22)] hover:shadow-lg hover:shadow-[rgba(204,88,0,0.28)]",
     secondary:
-      "bg-white/60 text-zinc-900 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700 shadow-sm",
+      "bg-[var(--flow-soft)] text-[var(--flow-text)] hover:bg-[var(--flow-soft-strong)] shadow-sm",
     outline:
-      "border border-zinc-200 text-zinc-700 hover:border-zinc-950 hover:text-zinc-950 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-white dark:hover:text-white bg-transparent",
+      "border border-[var(--flow-border)] text-[var(--flow-muted)] hover:border-[var(--pumpkin-500)] hover:text-[var(--flow-text)] bg-transparent",
     ghost:
-      "text-zinc-600 hover:bg-white/60 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-50",
+      "text-[var(--flow-muted)] hover:bg-[var(--flow-soft)] hover:text-[var(--flow-text)]",
     danger:
       "bg-red-500 text-white hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700 shadow-sm",
   };
 
   const sizes = {
-    sm: "px-3 py-1.5 text-[11px] uppercase tracking-widest rounded-xl",
-    md: "px-5 py-2.5 text-sm rounded-2xl",
-    lg: "px-6 py-3.5 text-base rounded-[20px]",
-    icon: "p-2.5 rounded-xl",
+    sm: "min-h-[var(--flow-button-compact-height)] px-4 text-[11px] uppercase tracking-widest rounded-[var(--flow-radius-button)]",
+    md: "min-h-[var(--flow-button-height)] px-6 text-sm rounded-[var(--flow-radius-button)]",
+    lg: "min-h-[3.75rem] px-7 text-base rounded-[20px]",
+    icon: "h-10 w-10 p-0 rounded-2xl",
   };
 
   return (
@@ -114,7 +114,7 @@ export function Input({
         max={max}
         step={step}
         onWheel={handleWheel}
-        className="w-full px-4 py-3 rounded-2xl border border-zinc-200 bg-white/70 text-sm text-zinc-900 transition-all focus:border-zinc-950 focus:bg-white focus:outline-none focus:ring-4 focus:ring-zinc-950/5 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-white dark:focus:bg-zinc-900 dark:focus:ring-white/5 placeholder:text-zinc-400 dark:placeholder:text-zinc-600 font-medium shadow-inner-sm"
+        className="w-full px-4 py-3 rounded-2xl border border-[var(--flow-border)] bg-[var(--flow-input)] text-sm text-[var(--flow-text)] transition-all focus:border-[var(--pumpkin-500)] focus:bg-[var(--flow-card)] focus:outline-none focus:ring-4 focus:ring-[rgba(255,110,0,0.14)] placeholder:text-[var(--flow-faint)] font-medium shadow-inner-sm"
         {...props}
       />
     </div>
@@ -124,15 +124,15 @@ export function Input({
 export function Badge({ children, variant = "default", className = "" }) {
   const variants = {
     default:
-      "bg-white/60 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700",
+      "bg-[var(--flow-soft)] text-[var(--flow-muted)] border-[var(--flow-border)]",
     success:
-      "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50",
+      "bg-[rgba(255,110,0,0.12)] text-[var(--pumpkin-700)] dark:text-[var(--pumpkin-200)] border-[rgba(255,110,0,0.28)]",
     warning:
-      "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-400 border-amber-200 dark:border-amber-800/50",
+      "bg-[rgba(255,139,51,0.14)] text-[var(--pumpkin-700)] dark:text-[var(--pumpkin-200)] border-[rgba(255,139,51,0.35)]",
     error:
       "bg-rose-50 text-rose-700 dark:bg-rose-950/30 dark:text-rose-400 border-rose-200 dark:border-rose-800/50",
     black:
-      "bg-zinc-950 text-white dark:bg-white dark:text-zinc-950 border-transparent",
+      "bg-[var(--pumpkin-800)] text-white dark:bg-[var(--pumpkin-400)] dark:text-[var(--pumpkin-950)] border-transparent",
   };
 
   return (
@@ -164,7 +164,7 @@ export function RangeSlider({
             </label>
           )}
           {valueLabel && (
-            <span className="text-[10px] font-mono font-bold text-zinc-900 dark:text-zinc-100 bg-white/60 dark:bg-zinc-800 px-2 py-0.5 rounded-md">
+            <span className="text-[10px] font-mono font-bold text-[var(--flow-text)] bg-[var(--flow-soft)] px-2 py-0.5 rounded-md">
               {valueLabel}
             </span>
           )}
@@ -178,7 +178,7 @@ export function RangeSlider({
         value={value}
         onChange={onChange}
         onInput={onChange}
-        className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-800 rounded-full appearance-none cursor-pointer accent-zinc-950 dark:accent-white focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:focus-visible:ring-zinc-600 transition-all hover:h-2"
+        className="w-full h-1.5 bg-[var(--flow-soft-strong)] rounded-full appearance-none cursor-pointer accent-[var(--pumpkin-500)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--pumpkin-400)] transition-all hover:h-2"
       />
     </div>
   );

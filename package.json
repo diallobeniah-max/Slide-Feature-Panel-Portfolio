@@ -1,6 +1,6 @@
 {
-  "name": "contentflow",
-  "version": "0.1.4",
+  "name": "flow",
+  "version": "0.1.7",
   "private": true,
   "main": "electron/main.cjs",
   "scripts": {
@@ -38,8 +38,8 @@
     "wait-on": "^9.0.5"
   },
   "build": {
-    "appId": "com.contentflow.desktop",
-    "productName": "ContentFlow",
+    "appId": "com.flow.desktop",
+    "productName": "Flow",
     "directories": {
       "output": "release"
     },
@@ -59,6 +59,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Flow",
       "installerIcon": "build/icon.ico",
       "uninstallerIcon": "build/icon.ico"
     }

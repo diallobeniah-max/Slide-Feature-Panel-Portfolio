@@ -29,9 +29,15 @@ const {
   setOcrAssetsLoaded,
 } = require("./logger.cjs");
 
+const APP_USER_MODEL_ID = "com.flow.desktop";
+
+if (process.platform === "win32") {
+  app.setAppUserModelId(APP_USER_MODEL_ID);
+}
+
 protocol.registerSchemesAsPrivileged([
   {
-    scheme: "contentflow-media",
+    scheme: "flow-media",
     privileges: {
       standard: true,
       secure: true,
@@ -40,7 +46,7 @@ protocol.registerSchemesAsPrivileged([
     },
   },
   {
-    scheme: "contentflow-thumb",
+    scheme: "flow-thumb",
     privileges: {
       standard: true,
       secure: true,
@@ -90,6 +96,13 @@ const DEFAULT_THEME_PREFS = {
   isDark: true,
 };
 const PHONE_POPOUT_VERSION = 2;
+
+function resolveDownloadFolderPath(folders = {}, key = "") {
+  const cleanKey = String(key || "").replace(/[^a-zA-Z0-9]/g, "");
+  if (folders.useGlobalForAll && folders.global) return folders.global;
+  if (folders.useVideoGrabberForAll && folders.videoGrabber) return folders.videoGrabber;
+  return folders[cleanKey] || folders.global || folders.videoGrabber || "";
+}
 
 function getAppIconPath() {
   return path.join(__dirname, "assets", "icon.ico");
@@ -298,11 +311,11 @@ async function setLastGalleryScan(scan) {
 }
 
 function createMediaUrl(id) {
-  return `contentflow-media://file/${encodeURIComponent(id)}`;
+  return `flow-media://file/${encodeURIComponent(id)}`;
 }
 
 function createThumbnailUrl(id) {
-  return `contentflow-thumb://file/${encodeURIComponent(id)}`;
+  return `flow-thumb://file/${encodeURIComponent(id)}`;
 }
 
 function registerMediaPath(id, filePath) {
@@ -317,6 +330,21 @@ function registerAssetPath(id, filePath) {
 
 const GROUP_IMAGE_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif", ".tif", ".tiff", ".svg"]);
 const GROUP_VIDEO_EXTENSIONS = new Set([".mp4", ".mov", ".webm", ".mkv", ".avi"]);
+const MEDIA_MIME_BY_EXTENSION = {
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp",
+  ".avif": "image/avif",
+  ".svg": "image/svg+xml",
+  ".mp4": "video/mp4",
+  ".mov": "video/quicktime",
+  ".webm": "video/webm",
+  ".mkv": "video/x-matroska",
+  ".avi": "video/x-msvideo",
+};
 
 function createAssetGroupId(name = "") {
   return crypto
@@ -624,7 +652,7 @@ async function assertSelectedFolder(folderPath) {
     throw new Error("No gallery folder has been selected.");
   }
   if (selectedFolder !== store.lastFolder) {
-    throw new Error("Select this folder in ContentFlow before scanning it.");
+    throw new Error("Select this folder in Flow before scanning it.");
   }
 
   const stats = await fs.stat(selectedFolder);
@@ -639,7 +667,7 @@ async function assertSelectedAssetsFolder(folderPath) {
   const selectedFolder = folderPath || store.lastFolder;
   if (!selectedFolder) throw new Error("No assets folder has been selected.");
   if (selectedFolder !== store.lastFolder) {
-    throw new Error("Select this folder in ContentFlow before scanning it.");
+    throw new Error("Select this folder in Flow before scanning it.");
   }
   const stats = await fs.stat(selectedFolder);
   if (!stats.isDirectory()) throw new Error("Selected assets path is not a folder.");
@@ -783,7 +811,7 @@ async function createWindow() {
     minWidth: 980,
     minHeight: 680,
     backgroundColor: resolveThemeBackground(themePrefs),
-    title: "ContentFlow",
+    title: "Flow",
     icon: getAppIconPath(),
     webPreferences: {
       contextIsolation: true,
@@ -834,8 +862,8 @@ async function confirmQuitIfNeeded() {
     buttons: ["Cancel", "Quit"],
     defaultId: 0,
     cancelId: 0,
-    title: "Quit ContentFlow?",
-    message: "You may have unsaved work in ContentFlow. Do you want to quit anyway?",
+    title: "Quit Flow?",
+    message: "You may have unsaved work in Flow. Do you want to quit anyway?",
   });
   return result.response === 1;
 }
@@ -851,11 +879,11 @@ async function requestAppQuit() {
 function ensureTray() {
   if (tray) return tray;
   tray = new Tray(getAppIconPath());
-  tray.setToolTip("ContentFlow");
+  tray.setToolTip("Flow");
   tray.setContextMenu(
     Menu.buildFromTemplate([
       {
-        label: "Open ContentFlow",
+        label: "Open Flow",
         click: () => {
           if (!mainWindow || mainWindow.isDestroyed()) {
             createWindow().catch((error) => logError("Window creation failed", error));
@@ -867,7 +895,7 @@ function ensureTray() {
       },
       { type: "separator" },
       {
-        label: "Quit ContentFlow",
+        label: "Quit Flow",
         click: () => requestAppQuit(),
       },
     ]),
@@ -940,7 +968,7 @@ async function createToolWindow(toolName) {
     y: bounds.y,
     minWidth: 360,
     minHeight: 620,
-    title: `ContentFlow ${tool}`,
+    title: `Flow ${tool}`,
     backgroundColor: resolveThemeBackground(themePrefs),
     icon: getAppIconPath(),
     alwaysOnTop: Boolean(bounds.alwaysOnTop),
@@ -986,7 +1014,7 @@ async function createCompanionWindow() {
     y: bounds.y,
     minWidth: 320,
     minHeight: 380,
-    title: "ContentFlow Companion",
+    title: "Flow Companion",
     backgroundColor: resolveThemeBackground(themePrefs),
     icon: getAppIconPath(),
     alwaysOnTop: false,
@@ -1011,7 +1039,7 @@ async function createCompanionWindow() {
 }
 
 function setupMediaProtocol() {
-  protocol.handle("contentflow-media", async (request) => {
+  protocol.handle("flow-media", async (request) => {
     try {
       const url = new URL(request.url);
       const id = decodeURIComponent(url.pathname.replace(/^\/+/, "") || url.hostname);
@@ -1024,7 +1052,7 @@ function setupMediaProtocol() {
     }
   });
 
-  protocol.handle("contentflow-thumb", async (request) => {
+  protocol.handle("flow-thumb", async (request) => {
     try {
       const url = new URL(request.url);
       const id = decodeURIComponent(url.pathname.replace(/^\/+/, "") || url.hostname);
@@ -1070,7 +1098,7 @@ function setupUpdates() {
   autoUpdater.on("update-available", (info) => {
     sendUpdateStatus({
       state: "available",
-      title: info.releaseName || "ContentFlow update available",
+      title: info.releaseName || "Flow update available",
       version: info.version,
       description: info.releaseNotes || "",
       releaseDate: info.releaseDate || "",
@@ -1080,7 +1108,7 @@ function setupUpdates() {
   autoUpdater.on("update-not-available", (info) => {
     sendUpdateStatus({
       state: "not-available",
-      title: "ContentFlow is up to date",
+      title: "Flow is up to date",
       version: info.version,
     });
   });
@@ -1243,6 +1271,7 @@ function setupCompanionIpc() {
       downloadFolders: {
         ...current.downloadFolders,
         [cleanKey]: folderPath,
+        ...(cleanKey === "global" ? { useGlobalForAll: true } : {}),
       },
     };
     await writeDesktopPrefs(nextPrefs);
@@ -1262,9 +1291,7 @@ function setupCompanionIpc() {
     const cleanKey = String(key || "").replace(/[^a-zA-Z0-9]/g, "");
     const current = await readDesktopPrefs();
     const folders = current.downloadFolders || {};
-    const folderPath = folders.useGlobalForAll && folders.global
-      ? folders.global
-      : folders[cleanKey] || folders.global || "";
+    const folderPath = resolveDownloadFolderPath(folders, cleanKey);
     if (!folderPath) return { saved: false, path: "" };
     await fs.mkdir(folderPath, { recursive: true });
     const cleanName = String(fileName || "export.bin")
@@ -1290,9 +1317,7 @@ function setupCompanionIpc() {
     const cleanFormat = format === "7z" ? "7z" : "zip";
     const current = await readDesktopPrefs();
     const folders = current.downloadFolders || {};
-    const folderPath = folders.useGlobalForAll && folders.global
-      ? folders.global
-      : folders[String(key || "tools")] || folders.global || app.getPath("downloads");
+    const folderPath = resolveDownloadFolderPath(folders, key) || app.getPath("downloads");
     await fs.mkdir(folderPath, { recursive: true });
     const cleanStem = String(fileName || "tools-export")
       .replace(/\.[^.]+$/, "")
@@ -1310,7 +1335,7 @@ function setupCompanionIpc() {
       }
     }
     const id = crypto.randomUUID();
-    const tempPath = path.join(app.getPath("temp"), `contentflow-archive-${id}`);
+    const tempPath = path.join(app.getPath("temp"), `flow-archive-${id}`);
     await fs.mkdir(tempPath, { recursive: true });
     archiveSessions.set(id, { id, ownerId: event.sender.id, format: cleanFormat, archivePath, tempPath });
     return { id, format: cleanFormat };
@@ -1353,6 +1378,26 @@ function setupCompanionIpc() {
     archiveSessions.delete(session.id);
     await fs.rm(session.tempPath, { recursive: true, force: true }).catch(() => {});
     return { canceled: true };
+  });
+  ipcMain.handle("desktop:open-path", async (_event, filePath = "") => {
+    const target = path.resolve(String(filePath || ""));
+    try {
+      await fs.access(target);
+    } catch {
+      return { opened: false, message: "File not found." };
+    }
+    const message = await shell.openPath(target);
+    return { opened: !message, message };
+  });
+  ipcMain.handle("desktop:show-item-in-folder", async (_event, filePath = "") => {
+    const target = path.resolve(String(filePath || ""));
+    try {
+      await fs.access(target);
+    } catch {
+      return { revealed: false, message: "File not found." };
+    }
+    shell.showItemInFolder(target);
+    return { revealed: true };
   });
 }
 
@@ -1542,9 +1587,31 @@ function setupGalleryIpc() {
     return scanFolder(store.lastFolder);
   });
 
-  ipcMain.handle("gallery:get-media-file-url", (_event, mediaId) => {
-    if (!mediaId || !mediaPathById.has(mediaId)) return "";
+  ipcMain.handle("gallery:get-media-file-url", async (_event, mediaId) => {
+    if (!mediaId) return "";
+    if (!mediaPathById.has(mediaId)) {
+      const store = await readGalleryStore();
+      hydrateStoredGalleryItems(store.lastScan?.items || []);
+    }
+    if (!mediaPathById.has(mediaId)) return "";
     return createMediaUrl(mediaId);
+  });
+
+  ipcMain.handle("gallery:read-media-file", async (_event, mediaId) => {
+    if (!mediaId) return null;
+    if (!mediaPathById.has(mediaId)) {
+      const store = await readGalleryStore();
+      hydrateStoredGalleryItems(store.lastScan?.items || []);
+    }
+    const filePath = mediaPathById.get(mediaId);
+    if (!filePath) return null;
+    const data = await fs.readFile(filePath);
+    const extension = path.extname(filePath).toLowerCase();
+    return {
+      name: path.basename(filePath),
+      type: MEDIA_MIME_BY_EXTENSION[extension] || "application/octet-stream",
+      data,
+    };
   });
 
   ipcMain.handle("files:open-external", async (_event, kind, id) => {
@@ -1866,7 +1933,7 @@ function setupWriteIpc() {
 
   ipcMain.handle("write:select-folder", async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: "Choose where ContentFlow saves writing",
+      title: "Choose where Flow saves writing",
       properties: ["openDirectory", "createDirectory"],
     });
     if (result.canceled || !result.filePaths?.[0]) {

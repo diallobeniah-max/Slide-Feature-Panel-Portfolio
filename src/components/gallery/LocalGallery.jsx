@@ -12,11 +12,11 @@ import { clearLocalGalleryTags, getLocalMediaTags, saveLocalMediaTags } from "..
 import { isImageMedia, isVideoMedia } from "../../utils/mediaTypes.js";
 
 const GALLERY_SHELL_CLASS =
-  "mx-auto grid w-full max-w-[1536px] min-w-0 gap-5 overflow-x-hidden px-5 py-6";
+  "flow-page grid w-full max-w-[1536px] min-w-0 gap-5 overflow-x-hidden";
 const LARGE_FOLDER_THRESHOLD = 500;
 const LIBRARY_BATCH_SIZE = 20;
 const PREVIEW_BATCH_SIZE = 20;
-const GALLERY_VIEW_STATE_KEY = "contentflow-gallery-view-state-v1";
+const GALLERY_VIEW_STATE_KEY = "flow-gallery-view-state-v1";
 
 const notify = (title, message, type = "success") =>
   window.dispatchEvent(
@@ -24,7 +24,7 @@ const notify = (title, message, type = "success") =>
   );
 
 function getGalleryApi() {
-  return window.contentFlowGallery || null;
+  return window.flowGallery || null;
 }
 
 function mergeTags(items, tagsById) {
@@ -667,7 +667,7 @@ export default function LocalGallery() {
             </p>
             <p className="mt-1 text-xs font-medium text-zinc-500">{error}</p>
             <p className="mt-1 text-[10px] font-medium uppercase tracking-widest text-zinc-400">
-              ContentFlow keeps scanning read-only and skips unreadable files.
+              Flow keeps scanning read-only and skips unreadable files.
             </p>
           </div>
           </div>
@@ -748,7 +748,7 @@ export default function LocalGallery() {
               Large folder detected. Loading in optimized batches.
             </p>
             <p className="mt-1 text-xs font-medium text-zinc-500">
-              ContentFlow starts with a small batch. Use Load More when you are ready for the next group.
+              Flow starts with a small batch. Use Load More when you are ready for the next group.
             </p>
           </div>
         </Card>

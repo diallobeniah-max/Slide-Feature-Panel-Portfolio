@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from "react";
-import JSZip from "jszip";
 import {
   Upload,
   Download,
@@ -29,7 +28,7 @@ import { Card, Button, Badge, RangeSlider, Input } from "./ui";
 import FloatingToolPanel from "./ui/FloatingToolPanel.jsx";
 import PanelPopupButton from "./ui/PanelPopupButton.jsx";
 
-const BATCH_STATE_KEY = "contentflow-batch-state-v1";
+const BATCH_STATE_KEY = "flow-batch-state-v1";
 
 function loadBatchState() {
   try {
@@ -107,7 +106,7 @@ function encodeWAV(audioBuffer) {
 }
 
 // --- Main Panel ---
-export default function BatchStudioPanel() {
+export default function BatchStudioPanel({ embedded = false }) {
   const savedBatchState = useMemo(loadBatchState, []);
   // Asset Management
   const [files, setFiles] = useState([]);
@@ -152,7 +151,7 @@ export default function BatchStudioPanel() {
       BATCH_STATE_KEY,
       JSON.stringify({ quality, targetImgFormat, targetVidFormat, vidOutputMode }),
     );
-    window.contentFlow?.appState?.setUnsaved?.(Boolean(files.length || isProcessing), "batch");
+    window.flow?.appState?.setUnsaved?.(Boolean(files.length || isProcessing), "batch");
   }, [files.length, isProcessing, quality, targetImgFormat, targetVidFormat, vidOutputMode]);
 
   // File handling
@@ -491,6 +490,7 @@ export default function BatchStudioPanel() {
   ]);
 
   const downloadZip = async () => {
+    const { default: JSZip } = await import("jszip");
     const zip = new JSZip();
     processedFiles.forEach((file) => {
       const filename = file.outputName || `${file.name.split(".")[0]}_opt.webm`;
@@ -742,8 +742,13 @@ export default function BatchStudioPanel() {
     </>
   );
 
+  const Shell = embedded ? "section" : "main";
+  const shellClass = embedded
+    ? "grid gap-5 lg:grid-cols-[20rem_minmax(0,1fr)] items-start"
+    : "flow-page grid max-w-[1536px] gap-6 lg:grid-cols-[22em_1fr] items-start";
+
   return (
-    <main className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[22em_1fr] items-start">
+    <Shell className={shellClass}>
       {/* Download Progress Notification */}
       {downloadProgress.show && (
         <div className="fixed top-6 right-6 z-[300] bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 p-6 min-w-[320px] animate-in slide-in-from-right duration-300">
@@ -779,7 +784,7 @@ export default function BatchStudioPanel() {
       </aside>
 
       <FloatingToolPanel
-        storageKey="contentflow-batch-floating-panel"
+        storageKey="flow-batch-floating-panel"
         title="Batch Controls"
         eyebrow="Batch"
         open={isControlPanelOpen}
@@ -1438,7 +1443,7 @@ export default function BatchStudioPanel() {
           </Card>
         </div>
       )}
-    </main>
+    </Shell>
   );
 }
 

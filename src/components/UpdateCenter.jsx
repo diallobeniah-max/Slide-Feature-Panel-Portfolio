@@ -3,7 +3,7 @@ import { Download, RefreshCw, RotateCcw, X } from "lucide-react";
 import { Button, Card } from "./ui.jsx";
 
 function hasElectronUpdates() {
-  return Boolean(window.contentFlow?.updates);
+  return Boolean(window.flow?.updates);
 }
 
 export default function UpdateCenter() {
@@ -15,18 +15,18 @@ export default function UpdateCenter() {
     if (!hasElectronUpdates()) return undefined;
 
     let cancelled = false;
-    window.contentFlow.updates.getCurrentVersion().then((version) => {
+    window.flow.updates.getCurrentVersion().then((version) => {
       if (!cancelled) setCurrentVersion(version || "");
     });
 
-    const unsubscribe = window.contentFlow.updates.onStatus((payload) => {
+    const unsubscribe = window.flow.updates.onStatus((payload) => {
       setStatus(payload);
       if (["available", "downloading", "downloaded"].includes(payload?.state)) {
         setOpen(true);
       }
     });
 
-    window.contentFlow.updates.checkForUpdates().catch(() => {});
+    window.flow.updates.checkForUpdates().catch(() => {});
 
     return () => {
       cancelled = true;
@@ -57,7 +57,7 @@ export default function UpdateCenter() {
               Desktop Update
             </p>
             <h2 className="mt-1 text-xl font-black italic tracking-tight text-zinc-950 dark:text-white">
-              {status.title || "ContentFlow update"}
+              {status.title || "Flow update"}
             </h2>
           </div>
           {!isDownloading && (
@@ -123,7 +123,7 @@ export default function UpdateCenter() {
               <Button
                 icon={RotateCcw}
                 className="w-full"
-                onClick={() => window.contentFlow.updates.restartAndInstall()}
+                onClick={() => window.flow.updates.restartAndInstall()}
               >
                 Restart Now
               </Button>
@@ -132,7 +132,7 @@ export default function UpdateCenter() {
                 icon={isDownloading ? RefreshCw : Download}
                 className="w-full"
                 disabled={isDownloading}
-                onClick={() => window.contentFlow.updates.downloadUpdate()}
+                onClick={() => window.flow.updates.downloadUpdate()}
               >
                 {isDownloading ? "Downloading" : "Update Now"}
               </Button>

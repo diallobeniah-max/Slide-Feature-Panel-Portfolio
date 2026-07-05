@@ -21,6 +21,7 @@ const gallery = {
   cancelScan: () => ipcRenderer.invoke("gallery:cancel-scan"),
   rescanFolder: () => ipcRenderer.invoke("gallery:rescan-folder"),
   getMediaFileUrl: (mediaId) => ipcRenderer.invoke("gallery:get-media-file-url", mediaId),
+  readMediaFile: (mediaId) => ipcRenderer.invoke("gallery:read-media-file", mediaId),
   getLastFolder: () => ipcRenderer.invoke("gallery:get-last-folder"),
   getCacheStats: () => ipcRenderer.invoke("gallery:get-cache-stats"),
   getLastScan: () => ipcRenderer.invoke("gallery:get-last-scan"),
@@ -84,6 +85,8 @@ const desktop = {
   finishArchive: (id, compression) =>
     ipcRenderer.invoke("desktop:archive-finish", String(id || ""), Number(compression) || 5),
   cancelArchive: (id) => ipcRenderer.invoke("desktop:archive-cancel", String(id || "")),
+  openPath: (filePath) => ipcRenderer.invoke("desktop:open-path", String(filePath || "")),
+  showItemInFolder: (filePath) => ipcRenderer.invoke("desktop:show-item-in-folder", String(filePath || "")),
 };
 
 const windows = {
@@ -118,7 +121,7 @@ const write = {
   loadText: (id) => ipcRenderer.invoke("write:load-text", String(id || "")),
 };
 
-contextBridge.exposeInMainWorld("contentFlow", {
+contextBridge.exposeInMainWorld("flow", {
   platform: {
     isElectron: true,
     os: process.platform,
@@ -140,10 +143,10 @@ contextBridge.exposeInMainWorld("contentFlow", {
   },
 });
 
-contextBridge.exposeInMainWorld("contentFlowGallery", gallery);
-contextBridge.exposeInMainWorld("contentFlowAssets", assets);
-contextBridge.exposeInMainWorld("contentFlowFiles", files);
+contextBridge.exposeInMainWorld("flowGallery", gallery);
+contextBridge.exposeInMainWorld("flowAssets", assets);
+contextBridge.exposeInMainWorld("flowFiles", files);
 
-contextBridge.exposeInMainWorld("contentFlowDiagnostics", {
+contextBridge.exposeInMainWorld("flowDiagnostics", {
   getInfo: () => ipcRenderer.invoke("diagnostics:get-info"),
 });

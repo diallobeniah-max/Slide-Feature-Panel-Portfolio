@@ -11,7 +11,7 @@ import {
   Tags,
 } from "lucide-react";
 import { Badge, Button, Card } from "../ui.jsx";
-import ContentFlowSelect from "../ui/ContentFlowSelect.jsx";
+import FlowSelect from "../ui/FlowSelect.jsx";
 import { formatShortPath } from "../../utils/mediaTypes.js";
 
 export default function GalleryToolbar({
@@ -120,7 +120,7 @@ export default function GalleryToolbar({
           ))}
         </div>
 
-        <ContentFlowSelect
+        <FlowSelect
           value={sortMode}
           onChange={setSortMode}
           icon={Grid2X2}
@@ -134,7 +134,7 @@ export default function GalleryToolbar({
           ]}
         />
 
-        <ContentFlowSelect
+        <FlowSelect
           value={tagFilter}
           onChange={setTagFilter}
           icon={Tags}

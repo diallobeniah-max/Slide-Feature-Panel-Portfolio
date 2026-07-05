@@ -797,21 +797,21 @@ export default function GalleryViewer({
               <Button
                 icon={ExternalLink}
                 variant="secondary"
-                onClick={() => window.contentFlowFiles?.openExternal?.(sourceKind, item.id)}
+                onClick={() => window.flowFiles?.openExternal?.(sourceKind, item.id)}
               >
                 Open Externally
               </Button>
               <Button
                 icon={FolderOpen}
                 variant="secondary"
-                onClick={() => window.contentFlowFiles?.reveal?.(sourceKind, item.id)}
+                onClick={() => window.flowFiles?.reveal?.(sourceKind, item.id)}
               >
                 Reveal in Folder
               </Button>
               <Button
                 icon={Copy}
                 variant="secondary"
-                onClick={() => window.contentFlowFiles?.copySelected?.(sourceKind, [item.id])}
+                onClick={() => window.flowFiles?.copySelected?.(sourceKind, [item.id])}
               >
                 Copy Media
               </Button>

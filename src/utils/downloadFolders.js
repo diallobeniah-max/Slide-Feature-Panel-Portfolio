@@ -1,6 +1,8 @@
-const DB_NAME = "contentflow-download-folders";
+const DB_NAME = "flow-download-folders";
 const STORE_NAME = "handles";
-const PREFS_KEY = "contentflow-web-download-folders-v1";
+const PREFS_KEY = "flow-web-download-folders-v1";
+const LEGACY_PREFIX = ["content", "flow"].join("");
+const LEGACY_PREFS_KEY = `${LEGACY_PREFIX}-web-download-folders-v1`;
 
 const EMPTY_FOLDERS = {
   global: "",
@@ -49,7 +51,9 @@ export function canChooseWebDownloadFolder() {
 
 export function getWebDownloadFolderPreferences() {
   try {
-    const saved = JSON.parse(localStorage.getItem(PREFS_KEY) || "{}");
+    const savedText = localStorage.getItem(PREFS_KEY) || localStorage.getItem(LEGACY_PREFS_KEY) || "{}";
+    if (!localStorage.getItem(PREFS_KEY) && savedText !== "{}") localStorage.setItem(PREFS_KEY, savedText);
+    const saved = JSON.parse(savedText);
     return {
       downloadFolders: {
         ...EMPTY_FOLDERS,
@@ -73,20 +77,26 @@ export function setWebDownloadFolderPreferences(patch) {
   return next;
 }
 
+function resolvePreferredFolderKey(preferences, key) {
+  if (preferences.useGlobalForAll && preferences.global) return "global";
+  if (preferences.useVideoGrabberForAll && preferences.videoGrabber) return "videoGrabber";
+  return preferences[key] ? key : preferences.global ? "global" : key;
+}
+
 export async function chooseWebDownloadFolder(key) {
   if (!canChooseWebDownloadFolder()) {
     throw new Error("This browser does not support choosing a permanent download folder.");
   }
 
   const handle = await window.showDirectoryPicker({
-    id: `contentflow-${key}`,
+    id: `flow-${key}`,
     mode: "readwrite",
   });
   const permission = await handle.requestPermission({ mode: "readwrite" });
   if (permission !== "granted") throw new Error("Folder access was not granted.");
 
   await withStore("readwrite", (store) => store.put(handle, key));
-  return setWebDownloadFolderPreferences({ [key]: handle.name });
+  return setWebDownloadFolderPreferences(key === "global" ? { [key]: handle.name, useGlobalForAll: true } : { [key]: handle.name });
 }
 
 export async function getWebDownloadFolderHandle(key, requestPermission = false) {
@@ -109,13 +119,13 @@ export async function saveBlobToWebDownloadFolder(handle, fileName, blob) {
 }
 
 export async function saveBlobToPreferredFolder(key, fileName, blob) {
-  if (window.contentFlow?.desktop?.saveExportFile) {
-    const result = await window.contentFlow.desktop.saveExportFile(key, fileName, await blob.arrayBuffer());
+  if (window.flow?.desktop?.saveExportFile) {
+    const result = await window.flow.desktop.saveExportFile(key, fileName, await blob.arrayBuffer());
     return Boolean(result?.saved);
   }
 
   const preferences = getWebDownloadFolderPreferences().downloadFolders;
-  const preferredKey = preferences.useGlobalForAll && preferences.global ? "global" : key;
+  const preferredKey = resolvePreferredFolderKey(preferences, key);
   const handle = await getWebDownloadFolderHandle(preferredKey, true);
   if (!handle) return false;
   await saveBlobToWebDownloadFolder(handle, fileName, blob);

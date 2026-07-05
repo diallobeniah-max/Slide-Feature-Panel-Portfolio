@@ -11,7 +11,7 @@ function configureLogger(root) {
 }
 
 function getLogPath() {
-  return path.join(logRoot, "contentflow.log");
+  return path.join(logRoot, "flow.log");
 }
 
 function sanitizeValue(value) {

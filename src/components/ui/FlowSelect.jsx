@@ -2,7 +2,7 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Check, ChevronDown } from "lucide-react";
 
-export default function ContentFlowSelect({
+export default function FlowSelect({
   value,
   onChange,
   options = [],

@@ -1,5 +1,5 @@
 export function canDragIndexedFile() {
-  return Boolean(window.contentFlowFiles?.startDrag);
+  return Boolean(window.flowFiles?.startDrag);
 }
 
 function getPreviewSource(item) {
@@ -113,10 +113,10 @@ export function startIndexedFileDrag(event, sourceKind, itemOrItems) {
     .map((item) => (typeof item === "string" ? item : item?.id))
     .filter(Boolean);
   if (!ids.length) return;
-  const label = ids.length === 1 ? ids[0] : `${ids.length} ContentFlow files`;
+  const label = ids.length === 1 ? ids[0] : `${ids.length} Flow files`;
   event.dataTransfer?.setData("text/plain", label);
-  event.dataTransfer?.setData("contentflow/media-id", ids.join(","));
-  event.dataTransfer?.setData("contentflow/source-kind", sourceKind);
+  event.dataTransfer?.setData("flow/media-id", ids.join(","));
+  event.dataTransfer?.setData("flow/source-kind", sourceKind);
   event.dataTransfer.effectAllowed = "copy";
   const preview = createDragPreview(items.filter((item) => typeof item !== "string"));
   if (preview && event.dataTransfer?.setDragImage) {
@@ -124,6 +124,6 @@ export function startIndexedFileDrag(event, sourceKind, itemOrItems) {
     window.setTimeout(() => preview.remove(), 0);
   }
   if (canDragIndexedFile()) {
-    window.contentFlowFiles.startDrag(sourceKind, ids);
+    window.flowFiles.startDrag(sourceKind, ids);
   }
 }

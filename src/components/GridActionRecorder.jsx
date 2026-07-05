@@ -6,6 +6,7 @@ import {
   Download,
   Eye,
   FileArchive,
+  FolderPlus,
   ImagePlus,
   Layers,
   LoaderCircle,
@@ -24,8 +25,8 @@ import { Badge, Button, Card, Input, RangeSlider } from "./ui.jsx";
 import { downloadBlob } from "../utils/media.js";
 import { saveBlobToPreferredFolder } from "../utils/downloadFolders.js";
 
-const ACTIONS_KEY = "contentflow-grid-actions-v1";
-const SAVED_LOGO_KEY = "contentflow-grid-saved-logo-v1";
+const ACTIONS_KEY = "flow-grid-actions-v1";
+const SAVED_LOGO_KEY = "flow-grid-saved-logo-v1";
 const DEFAULT_LAYER_WIDTH = 24;
 const IMAGE_ACCEPT = "image/*,.jpg,.jpeg,.png,.webp,.gif,.bmp,.avif,.svg";
 const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp", "gif", "bmp", "avif", "svg"]);
@@ -323,7 +324,7 @@ function canvasToPsdBlob(canvas) {
 async function loadImageFiles(files, onProgress) {
   const list = Array.from(files || []);
   const loaded = new Array(list.length);
-  const progressStep = Math.max(1, Math.ceil(list.length / 50));
+  const progressStep = Math.max(1, Math.ceil(list.length / 40));
   let cursor = 0;
   let completed = 0;
 
@@ -344,7 +345,7 @@ async function loadImageFiles(files, onProgress) {
     }
   }
 
-  await Promise.all(Array.from({ length: Math.min(12, list.length) }, worker));
+  await Promise.all(Array.from({ length: Math.min(4, list.length) }, worker));
   return loaded.filter(Boolean);
 }
 
@@ -983,6 +984,7 @@ export default function GridActionRecorder() {
   const [logoPreviewOpen, setLogoPreviewOpen] = useState(false);
   const [compressionPreview, setCompressionPreview] = useState(null);
   const backgroundInputRef = useRef(null);
+  const backgroundFolderInputRef = useRef(null);
   const layerInputRef = useRef(null);
   const objectUrlsRef = useRef(new Set());
 
@@ -1114,27 +1116,37 @@ export default function GridActionRecorder() {
     detectAspectRatios();
   }
 
+  async function importBackgroundFiles(files) {
+    if (!files.length) return;
+    updateOperation("Loading pictures", 0);
+    try {
+      const next = await loadImageFiles(files, (completed, total) =>
+        updateOperation(`Loading pictures ${completed}/${total}`, total ? (completed / total) * 100 : 100),
+      );
+      next.forEach((image) => objectUrlsRef.current.add(image.src));
+      if (!next.length) {
+        notify("No pictures added", "Import PNG, JPEG, WEBP, or another browser-readable image.", "error");
+        return;
+      }
+      setBackgrounds((current) => [...current, ...next]);
+      setSelectedPictureIds((current) => {
+        const selected = new Set(current);
+        next.forEach((image) => selected.add(image.id));
+        return selected;
+      });
+      setActiveBackgroundId((current) => current || next[0].id);
+      notify("Pictures Added", `${next.length} canvas picture${next.length === 1 ? "" : "s"} ready.`);
+    } catch (error) {
+      notify("Picture Import Failed", error?.message || "Pictures could not be imported.", "error");
+    } finally {
+      setOperation(null);
+    }
+  }
+
   async function importBackgrounds(event) {
     const files = Array.from(event.target.files || []);
     event.target.value = "";
-    updateOperation("Loading pictures", 0);
-    const next = await loadImageFiles(files, (completed, total) =>
-      updateOperation(`Loading pictures ${completed}/${total}`, total ? (completed / total) * 100 : 100),
-    );
-    next.forEach((image) => objectUrlsRef.current.add(image.src));
-    setOperation(null);
-    if (!next.length) {
-      notify("No pictures added", "Import PNG, JPEG, WEBP, or another browser-readable image.", "error");
-      return;
-    }
-    setBackgrounds((current) => [...current, ...next]);
-    setSelectedPictureIds((current) => {
-      const selected = new Set(current);
-      next.forEach((image) => selected.add(image.id));
-      return selected;
-    });
-    setActiveBackgroundId((current) => current || next[0].id);
-    notify("Pictures Added", `${next.length} canvas picture${next.length === 1 ? "" : "s"} ready.`);
+    await importBackgroundFiles(files);
   }
 
   async function importLayers(event) {
@@ -1474,9 +1486,41 @@ export default function GridActionRecorder() {
   return (
     <>
       <input ref={backgroundInputRef} type="file" accept={IMAGE_ACCEPT} multiple className="hidden" onChange={importBackgrounds} />
+      <input ref={backgroundFolderInputRef} type="file" accept={IMAGE_ACCEPT} multiple webkitdirectory="" directory="" className="hidden" onChange={importBackgrounds} />
       <input ref={layerInputRef} type="file" accept={IMAGE_ACCEPT} multiple className="hidden" onChange={importLayers} />
 
-      <main className="mx-auto grid max-w-7xl items-start gap-6 px-5 py-6 lg:grid-cols-[23rem_minmax(0,1fr)]">
+      <main className="flow-page grid max-w-[1536px] items-start gap-6 lg:grid-cols-[23rem_minmax(0,1fr)]">
+        <Card className="lg:col-span-2 overflow-hidden border-zinc-200/80 bg-white/90 p-0 shadow-sm transition-shadow duration-300 hover:shadow-lg dark:border-zinc-800 dark:bg-zinc-900/90">
+          <div className="grid gap-5 p-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-zinc-500">Action Recorder</p>
+              <h2 className="mt-1 text-2xl font-black tracking-tight text-zinc-950 dark:text-white">Place a logo once, apply it to matching ratios</h2>
+              <p className="mt-1 max-w-3xl text-sm font-semibold text-zinc-500">
+                Import pictures, add a logo layer, save a ratio preset, then play the preset across every matching picture.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button icon={ImagePlus} onClick={() => backgroundInputRef.current?.click()} disabled={Boolean(operation)}>Import Pictures</Button>
+              <Button icon={FolderPlus} variant="secondary" onClick={() => backgroundFolderInputRef.current?.click()} disabled={Boolean(operation)}>Import Folder</Button>
+              <Button icon={Layers} variant="secondary" onClick={() => layerInputRef.current?.click()} disabled={Boolean(operation)}>Import Logo</Button>
+            </div>
+          </div>
+          <div className="grid border-t border-zinc-100 bg-zinc-50/80 px-5 py-4 dark:border-zinc-800 dark:bg-zinc-950/40 md:grid-cols-3">
+            {[
+              ["1", "Detect", "Load photos and use Detect Ratios to group matching sizes."],
+              ["2", "Position", "Move the logo on the canvas for the active ratio."],
+              ["3", "Apply", "Save the preset, select presets, then Play or export."],
+            ].map(([step, title, copy]) => (
+              <div key={step} className="flex gap-3 py-2 md:px-3">
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-zinc-950 text-xs font-black text-white dark:bg-white dark:text-zinc-950">{step}</span>
+                <span>
+                  <span className="block text-xs font-black uppercase tracking-widest text-zinc-500">{title}</span>
+                  <span className="mt-0.5 block text-sm font-semibold text-zinc-700 dark:text-zinc-200">{copy}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
         <aside className="grid content-start gap-5">
           <Card className="p-5">
             <div className="flex items-start justify-between gap-3">
@@ -1487,18 +1531,21 @@ export default function GridActionRecorder() {
               <Badge variant={recording ? "error" : "default"}>{recording ? "Recording" : "Ready"}</Badge>
             </div>
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+            <div className="mt-4 grid gap-2">
               <Button icon={ImagePlus} onClick={() => backgroundInputRef.current?.click()} disabled={Boolean(operation)}>
                 Import Pictures
               </Button>
+              <Button icon={FolderPlus} variant="secondary" onClick={() => backgroundFolderInputRef.current?.click()} disabled={Boolean(operation)}>
+                Import Folder
+              </Button>
               <Button icon={Layers} variant="secondary" onClick={() => layerInputRef.current?.click()} disabled={Boolean(operation)}>
-                Import Logo Layers
+                Import Logo
               </Button>
             </div>
 
             <div className="mt-4 grid grid-cols-2 gap-2">
               <Button icon={Save} onClick={saveCurrentRatioPreset} disabled={!background || !layers.length}>
-                Save Preset
+                Save
               </Button>
               <Button icon={Play} variant="outline" onClick={playSelectedPresets} disabled={!selectedPresetIds.size || !backgrounds.length}>
                 Play {selectedPresetIds.size ? `(${selectedPresetIds.size})` : ""}

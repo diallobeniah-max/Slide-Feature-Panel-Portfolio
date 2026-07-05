@@ -1,12 +1,12 @@
 import { parseBody, json, ensureBinaries, execFileAsync, buildNetworkArgs, getYtDlpErrorMessage } from './youtubeUtils.mjs';
-import { getVideoPlatform, isSupportedVideoUrl, isYoutubeUrl, normalizeVideoUrl } from './youtubeValidation.mjs';
+import { getVideoPlatform, getUnsupportedVideoUrlReason, isSupportedVideoUrl, isYoutubeUrl, normalizeVideoUrl } from './youtubeValidation.mjs';
 
 export async function handleInfo(req, res) {
   let platform = null;
   try {
     const { url } = await parseBody(req);
     if (!url) return json(res, 400, { error: 'Missing url' });
-    if (!isSupportedVideoUrl(url)) return json(res, 400, { error: 'Invalid video URL. Paste a YouTube, Facebook, or Instagram link.' });
+    if (!isSupportedVideoUrl(url)) return json(res, 400, { error: getUnsupportedVideoUrlReason(url) });
 
     const normalizedUrl = normalizeVideoUrl(url);
     platform = getVideoPlatform(normalizedUrl);

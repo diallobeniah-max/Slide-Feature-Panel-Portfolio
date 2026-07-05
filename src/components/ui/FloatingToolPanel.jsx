@@ -65,7 +65,7 @@ function loadFrame(storageKey, defaultSize) {
 }
 
 export default function FloatingToolPanel({
-  storageKey = "contentflow-floating-panel",
+  storageKey = "flow-floating-panel",
   title,
   eyebrow = "Panel",
   open,

@@ -1,4 +1,4 @@
-const LOCAL_TAGS_KEY = "contentflow-gallery-tags";
+const LOCAL_TAGS_KEY = "flow-gallery-tags";
 
 function readLocalTags() {
   try {

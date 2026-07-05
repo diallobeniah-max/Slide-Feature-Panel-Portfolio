@@ -14,7 +14,6 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import JSZip from "jszip";
 import { downloadBlob } from "../utils/media.js";
 import { Card, Button, Input, RangeSlider } from "./ui.jsx";
 import {
@@ -238,6 +237,7 @@ export default function SlideSlicerPanel() {
   async function exportSlices() {
     if (!generatedSlices.length) return;
     setStatus({ type: "loading", message: "Bundling slide ZIP..." });
+    const { default: JSZip } = await import("jszip");
     const zip = new JSZip();
 
     for (let index = 0; index < generatedSlices.length; index += 1) {
@@ -310,7 +310,7 @@ export default function SlideSlicerPanel() {
   }
 
   return (
-    <div className="mx-auto grid max-w-7xl gap-6 px-5 py-6 lg:grid-cols-[24em_1fr]">
+    <div className="flow-page grid max-w-[1536px] gap-6 lg:grid-cols-[24em_1fr]">
       <aside className="grid content-start gap-5">
         <Card className="p-0 overflow-hidden flex flex-col">
           <div className="p-2 border-b border-zinc-200 dark:border-zinc-800/50 bg-zinc-50 dark:bg-zinc-950/20">

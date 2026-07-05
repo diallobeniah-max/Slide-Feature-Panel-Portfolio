@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trash2, ChevronDown, ChevronUp, Download, Scissors, Check, AlertCircle, Pencil, X, Pause, Play } from 'lucide-react';
+import { Trash2, ChevronDown, ChevronUp, Download, Scissors, Check, AlertCircle, Pencil, X, Pause, Play, FolderOpen, ExternalLink, RotateCcw } from 'lucide-react';
 import { Card, Button, Badge } from '../ui';
 import { formatTime, formatBytes, extractVideoId, getVideoPlatformLabel } from './youtubeUtils';
 import VideoPreview from './VideoPreview';
@@ -8,7 +8,7 @@ import SubtitleOptions from './SubtitleOptions';
 import DownloadProgress from './DownloadProgress';
 import TrimTimeline from './TrimTimeline';
 
-export default function QueueItem({ item, onRemove, onUpdate, onDownload, onPause, onResume, onDownloadSubtitles }) {
+export default function QueueItem({ item, onRemove, onUpdate, onDownload, onPause, onResume, onDownloadSubtitles, onOpenVideo, onOpenFolder, layout = "horizontal", previewScale = 100 }) {
   const [expanded, setExpanded] = useState(false);
   const [editingTitle, setEditingTitle] = useState(false);
   const [draftTitle, setDraftTitle] = useState(item.title || "");
@@ -57,10 +57,13 @@ export default function QueueItem({ item, onRemove, onUpdate, onDownload, onPaus
   const clipLength = (item.trimEnd || item.duration) - item.trimStart;
   const providerLabel = item.platformLabel || getVideoPlatformLabel(item.platform || item.url);
   const canConfigure = item.status !== "fetching" && item.status !== "error";
+  const hasSavedActions = item.status === "done" && item.savedPath;
   const metaText = [
     item.channel,
     item.viewCount ? `${item.viewCount.toLocaleString()} views` : null,
   ].filter(Boolean).join(" • ") || providerLabel;
+
+  const boxed = false;
 
   const getEstimatedSize = () => {
     if (item.quality === 'audio') return item.audioSize || 0;
@@ -76,12 +79,12 @@ export default function QueueItem({ item, onRemove, onUpdate, onDownload, onPaus
   };
 
   return (
-    <Card className="overflow-hidden animate-studio-rise">
+    <Card className="relative overflow-hidden animate-studio-rise card-hover">
       {item.previewMode ? (
-        <VideoPreview item={item} onUpdate={onUpdate} />
+        <VideoPreview item={item} onUpdate={onUpdate} layout={layout} previewScale={previewScale} />
       ) : (
-        <div className="flex items-start gap-4 p-4">
-          <VideoPreview item={item} onUpdate={onUpdate} />
+        <div className={boxed ? "grid gap-3 p-3" : "flex items-start gap-4 p-4"}>
+          <VideoPreview item={item} onUpdate={onUpdate} layout={layout} previewScale={previewScale} />
 
           <div className="flex-1 min-w-0 pt-1">
             {editingTitle ? (
@@ -119,15 +122,48 @@ export default function QueueItem({ item, onRemove, onUpdate, onDownload, onPaus
                 {item.title || "Fetching info..."}
                 </p>
                 {item.status !== "fetching" && (
-                  <button
-                    type="button"
-                    onClick={startTitleEdit}
-                    className="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-white/60 hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-white"
-                    aria-label="Edit video name"
-                    title="Edit video name"
-                  >
-                    <Pencil size={14} />
-                  </button>
+                  <div className="flex shrink-0 items-center gap-1 rounded-2xl border border-zinc-200/70 bg-white/50 p-1 dark:border-zinc-800 dark:bg-zinc-950/40">
+                    <button
+                      type="button"
+                      onClick={startTitleEdit}
+                      className="grid h-8 w-8 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-white hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-white"
+                      aria-label="Edit video name"
+                      title="Edit video name"
+                    >
+                      <Pencil size={14} />
+                    </button>
+                    {hasSavedActions && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onOpenVideo?.(item.savedPath)}
+                          className="grid h-8 w-8 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-white hover:text-emerald-600 dark:hover:bg-zinc-800 dark:hover:text-emerald-300"
+                          aria-label="Open saved video"
+                          title="Open saved video"
+                        >
+                          <ExternalLink size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onOpenFolder?.(item.savedPath)}
+                          className="grid h-8 w-8 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-white hover:text-sky-600 dark:hover:bg-zinc-800 dark:hover:text-sky-300"
+                          aria-label="Open containing folder"
+                          title="Open containing folder"
+                        >
+                          <FolderOpen size={14} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onUpdate(item.id, { status: 'ready', progress: 0 })}
+                          className="grid h-8 w-8 place-items-center rounded-xl text-zinc-400 transition-colors hover:bg-white hover:text-zinc-900 dark:hover:bg-zinc-800 dark:hover:text-white"
+                          aria-label="Download again"
+                          title="Download again"
+                        >
+                          <RotateCcw size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 )}
               </div>
             )}
@@ -167,7 +203,7 @@ export default function QueueItem({ item, onRemove, onUpdate, onDownload, onPaus
           </div>
         </div>
 
-        <div className="flex flex-col gap-1.5 shrink-0">
+        <div className={boxed ? "absolute right-3 top-3 flex shrink-0 flex-col gap-1.5 rounded-2xl border border-white/10 bg-black/45 p-1 backdrop-blur-md" : "flex flex-col gap-1.5 shrink-0"}>
           {item.status === "downloading" && item.downloadKind === "video" && (
             <button
               type="button"
@@ -282,13 +318,47 @@ export default function QueueItem({ item, onRemove, onUpdate, onDownload, onPaus
       )}
 
       {item.status === "done" && (
-        <div className="border-t border-emerald-200 dark:border-emerald-900/50 px-4 py-3 bg-emerald-50 dark:bg-emerald-950/20 flex items-center justify-between">
-          <p className="text-xs text-emerald-600 dark:text-emerald-400 flex items-center gap-2 font-bold">
-            <Check size={14}/> Download Complete
-          </p>
-          <Button variant="secondary" size="sm" onClick={() => onUpdate(item.id, { status: 'ready', progress: 0 })}>
-             <Download size={14} className="mr-1" /> Download Again
-          </Button>
+        <div className="border-t border-emerald-400/20 bg-[linear-gradient(90deg,rgba(16,185,129,0.13),rgba(16,185,129,0.04))] px-4 py-2.5">
+          <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-400/25">
+                <Check size={13}/>
+              </span>
+              <div className="min-w-0">
+                <p className="text-[9px] font-black uppercase tracking-widest text-emerald-400">Saved video</p>
+                <p className="truncate text-[11px] font-bold text-emerald-50/90" title={item.savedFilename || item.title}>
+                  {item.savedFilename || item.title || "Download complete"}
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-1.5 md:justify-end">
+            {item.savedPath && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => onOpenVideo?.(item.savedPath)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-white/10 bg-white/10 px-3 text-[10px] font-black uppercase tracking-widest text-zinc-100 transition hover:bg-white/15"
+                >
+                  <ExternalLink size={13} /> Open video
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenFolder?.(item.savedPath)}
+                  className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-white/10 bg-white/10 px-3 text-[10px] font-black uppercase tracking-widest text-zinc-100 transition hover:bg-white/15"
+                >
+                  <FolderOpen size={13} /> Open folder
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => onUpdate(item.id, { status: 'ready', progress: 0 })}
+              className="inline-flex h-8 items-center gap-1.5 rounded-xl border border-white/10 bg-white/10 px-3 text-[10px] font-black uppercase tracking-widest text-zinc-100 transition hover:bg-white/15"
+            >
+              <RotateCcw size={13} /> Again
+            </button>
+            </div>
+          </div>
         </div>
       )}
     </Card>
