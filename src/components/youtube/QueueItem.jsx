@@ -63,7 +63,8 @@ export default function QueueItem({ item, onRemove, onUpdate, onDownload, onPaus
     item.viewCount ? `${item.viewCount.toLocaleString()} views` : null,
   ].filter(Boolean).join(" • ") || providerLabel;
 
-  const boxed = false;
+  const boxed = layout === "large";
+  const compact = layout === "compact";
 
   const getEstimatedSize = () => {
     if (item.quality === 'audio') return item.audioSize || 0;
@@ -79,11 +80,11 @@ export default function QueueItem({ item, onRemove, onUpdate, onDownload, onPaus
   };
 
   return (
-    <Card className="relative overflow-hidden animate-studio-rise card-hover">
+    <Card className={`relative overflow-hidden animate-studio-rise card-hover ${compact ? "tube-queue-compact" : ""} ${boxed ? "tube-queue-large" : ""}`}>
       {item.previewMode ? (
         <VideoPreview item={item} onUpdate={onUpdate} layout={layout} previewScale={previewScale} />
       ) : (
-        <div className={boxed ? "grid gap-3 p-3" : "flex items-start gap-4 p-4"}>
+        <div className={boxed ? "grid gap-3 p-3" : compact ? "flex items-start gap-3 p-3" : "flex items-start gap-4 p-4"}>
           <VideoPreview item={item} onUpdate={onUpdate} layout={layout} previewScale={previewScale} />
 
           <div className="flex-1 min-w-0 pt-1">

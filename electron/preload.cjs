@@ -87,6 +87,7 @@ const desktop = {
   cancelArchive: (id) => ipcRenderer.invoke("desktop:archive-cancel", String(id || "")),
   openPath: (filePath) => ipcRenderer.invoke("desktop:open-path", String(filePath || "")),
   showItemInFolder: (filePath) => ipcRenderer.invoke("desktop:show-item-in-folder", String(filePath || "")),
+  createApp: () => ipcRenderer.invoke("desktop:create-app"),
 };
 
 const windows = {

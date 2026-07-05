@@ -14,13 +14,29 @@ import { getUnsupportedVideoUrlReason, getVideoPlatformLabel, isSupportedVideoUr
 import QueueItem from "./QueueItem";
 import DownloadHistory from "./DownloadHistory";
 
+const TUBE_DISPLAY_MODE_KEY = "flow-tube-display-mode";
+const TUBE_DISPLAY_MODES = [
+  ["compact", "Compact"],
+  ["large", "Large"],
+  ["horizontal", "Horizontal"],
+];
+
+function getSavedTubeDisplayMode() {
+  try {
+    const saved = localStorage.getItem(TUBE_DISPLAY_MODE_KEY);
+    return TUBE_DISPLAY_MODES.some(([value]) => value === saved) ? saved : "horizontal";
+  } catch {
+    return "horizontal";
+  }
+}
+
 export default function YouTubePanel() {
   const [queue, setQueue] = useState([]);
   const [urlInput, setUrlInput] = useState("");
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkText, setBulkText] = useState("");
   const [playlistMode, setPlaylistMode] = useState(false);
-  const [queueLayout, setQueueLayout] = useState("horizontal");
+  const [queueLayout, setQueueLayout] = useState(getSavedTubeDisplayMode);
   const [queuePreviewScale, setQueuePreviewScale] = useState(100);
   
   const [globalFormat, setGlobalFormat] = useState("mp4");
@@ -35,6 +51,17 @@ export default function YouTubePanel() {
   const [history, setHistory] = useState([]);
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { setHistory(loadHistory()); }, []);
+  useEffect(() => {
+    localStorage.setItem(TUBE_DISPLAY_MODE_KEY, queueLayout);
+  }, [queueLayout]);
+  useEffect(() => {
+    const handleDisplayMode = (event) => {
+      const mode = event.detail?.mode;
+      if (TUBE_DISPLAY_MODES.some(([value]) => value === mode)) setQueueLayout(mode);
+    };
+    window.addEventListener("flow-tube-display-mode", handleDisplayMode);
+    return () => window.removeEventListener("flow-tube-display-mode", handleDisplayMode);
+  }, []);
   useEffect(() => {
     const loadPrefs = () => {
       if (window.flow?.desktop?.getPreferences) {
@@ -705,7 +732,9 @@ export default function YouTubePanel() {
                 onChange={(event) => setQueueLayout(event.target.value)}
                 className="ml-auto min-h-9 cursor-pointer rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-1.5 text-[10px] font-black uppercase tracking-widest text-zinc-900 outline-none transition focus:border-zinc-400 focus:ring-4 focus:ring-zinc-950/5 dark:border-white/10 dark:bg-[#181622] dark:text-zinc-100 dark:focus:ring-white/10"
               >
-                <option value="horizontal">Large horizontal</option>
+                {TUBE_DISPLAY_MODES.map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
               </select>
             </label>
           )}
@@ -743,7 +772,7 @@ export default function YouTubePanel() {
             </div>
           </div>
         ) : (
-          <div className="grid w-full gap-4">
+          <div className={`grid w-full gap-4 ${queueLayout === "large" ? "sm:grid-cols-2" : ""} ${queueLayout === "compact" ? "gap-2" : ""}`}>
             {queue.map(item => (
               <QueueItem key={item.id} item={item}
                 onRemove={removeItem} onUpdate={updateItem} onDownload={downloadItem}

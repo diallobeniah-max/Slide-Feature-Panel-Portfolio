@@ -209,6 +209,56 @@ async function writeJson(filePath, data) {
   await fs.writeFile(filePath, JSON.stringify(data, null, 2), "utf8");
 }
 
+async function findNewestBuildArtifact(folderPath) {
+  let entries = [];
+  try {
+    entries = await fs.readdir(folderPath, { withFileTypes: true });
+  } catch {
+    return "";
+  }
+  const files = [];
+  for (const entry of entries) {
+    const filePath = path.join(folderPath, entry.name);
+    try {
+      const stats = await fs.stat(filePath);
+      if (entry.isFile()) {
+        files.push({ filePath, mtimeMs: stats.mtimeMs });
+      } else if (entry.isDirectory()) {
+        files.push({ filePath, mtimeMs: stats.mtimeMs });
+      }
+    } catch {
+      // Ignore files that disappear while scanning.
+    }
+  }
+  files.sort((a, b) => b.mtimeMs - a.mtimeMs);
+  return files[0]?.filePath || folderPath;
+}
+
+function runFixedProjectCommand(command, args, options = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      shell: false,
+      windowsHide: true,
+      env: { ...process.env, ...(options.env || {}) },
+    });
+    let stdout = "";
+    let stderr = "";
+    child.stdout?.on("data", (chunk) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on("data", (chunk) => {
+      stderr += chunk.toString();
+    });
+    child.on("error", (error) => {
+      resolve({ ok: false, code: -1, stdout, stderr, error: error.message });
+    });
+    child.on("close", (code) => {
+      resolve({ ok: code === 0, code, stdout, stderr, error: code === 0 ? "" : stderr || stdout });
+    });
+  });
+}
+
 function getGalleryStorePath() {
   return path.join(app.getPath("userData"), "gallery-store.json");
 }
@@ -1398,6 +1448,44 @@ function setupCompanionIpc() {
     }
     shell.showItemInFolder(target);
     return { revealed: true };
+  });
+  ipcMain.handle("desktop:create-app", async () => {
+    if (app.isPackaged) {
+      return { ok: false, error: "App creation is only available in local development builds." };
+    }
+    const projectRoot = path.resolve(__dirname, "..");
+    try {
+      await fs.access(path.join(projectRoot, "package.json"));
+    } catch {
+      return { ok: false, error: "Could not find the Flow package.json file." };
+    }
+    const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+    logInfo("Starting local app build");
+    const result = await runFixedProjectCommand(npmCommand, ["run", "electron:build"], {
+      cwd: projectRoot,
+      env: { FLOW_LOCAL_APP_BUILDER: "1" },
+    });
+    const releasePath = path.join(projectRoot, "release");
+    const outputPath = await findNewestBuildArtifact(releasePath);
+    if (!result.ok) {
+      logError("Local app build failed", new Error(result.error || "Build failed"));
+      return {
+        ok: false,
+        status: "Build failed",
+        releasePath,
+        outputPath,
+        error: String(result.error || "The desktop build failed.").slice(-2400),
+      };
+    }
+    logInfo("Local app build completed", { outputPath });
+    return {
+      ok: true,
+      status: "App created successfully",
+      appName: app.getName(),
+      buildType: "Electron NSIS",
+      releasePath,
+      outputPath,
+    };
   });
 }
 

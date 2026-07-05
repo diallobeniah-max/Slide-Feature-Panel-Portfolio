@@ -38,6 +38,15 @@ import {
   HelpCircle,
   CornerDownLeft,
   ArrowRight,
+  Maximize2,
+  Minimize2,
+  User,
+  Building2,
+  Users,
+  HardDrive,
+  Package,
+  Video,
+  ListVideo,
 } from "lucide-react";
 import { Activity, Suspense, lazy, memo, useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
@@ -203,7 +212,43 @@ const DOWNLOAD_FOLDER_PANELS = [
   { key: "tools", label: "Tools" },
 ];
 
+const SETTINGS_NAV_ITEMS = [
+  { id: "settings-account", label: "Account", description: "Profile, install mode, and security.", icon: User, targetId: "settings-account-panel" },
+  { id: "settings-workspace", label: "Workspace", description: "Panels and workspace behavior.", icon: Building2, targetId: "settings-tools" },
+  { id: "settings-display", label: "Display", description: "Navigation, icons, and text size.", icon: Monitor, targetId: "settings-display" },
+  { id: "settings-appearance", label: "Appearance", description: "Theme and pumpkin accents.", icon: Palette, targetId: "settings-appearance" },
+  { id: "settings-storage", label: "Storage", description: "Default save locations.", icon: HardDrive, targetId: "settings-storage" },
+  { id: "settings-downloads", label: "Downloads", description: "Video and export folders.", icon: Download, targetId: "settings-storage" },
+  { id: "settings-tools", label: "Tools", description: "Panel tools and diagnostics.", icon: Wrench, targetId: "settings-tools" },
+  { id: "settings-shortcuts", label: "Shortcuts", description: "Keyboard and command menu.", icon: Keyboard, targetId: "settings-display" },
+  { id: "settings-about", label: "About", description: "Version and app builder.", icon: Info, targetId: "settings-local-tools" },
+];
+
 const SETTINGS_SEARCH_ITEMS = [
+  {
+    id: "settings-account",
+    type: "settings",
+    title: "Settings > Account",
+    subtitle: "Settings",
+    path: "Settings / Account",
+    sectionId: "settings-account-panel",
+    icon: User,
+    description: "Review profile, sign-in status, install mode, and account security details.",
+    actions: ["Open account", "Review install mode", "Check security"],
+    keywords: ["account", "profile", "user", "login", "sign in", "google", "security"],
+  },
+  {
+    id: "settings-workspace",
+    type: "settings",
+    title: "Settings > Workspace",
+    subtitle: "Settings",
+    path: "Settings / Workspace",
+    sectionId: "settings-tools",
+    icon: Building2,
+    description: "Configure workspace panels and quickly move between Flow tools.",
+    actions: ["Open workspace", "Review panels", "Switch tools"],
+    keywords: ["workspace", "work space", "panels", "tools", "configure", "organization"],
+  },
   {
     id: "settings-general",
     type: "settings",
@@ -219,7 +264,7 @@ const SETTINGS_SEARCH_ITEMS = [
   {
     id: "settings-appearance",
     type: "settings",
-    title: "Appearance",
+    title: "Settings > Appearance",
     subtitle: "Settings",
     path: "Settings / Appearance",
     sectionId: "settings-appearance",
@@ -231,7 +276,7 @@ const SETTINGS_SEARCH_ITEMS = [
   {
     id: "settings-downloads",
     type: "settings",
-    title: "Downloads",
+    title: "Settings > Downloads",
     subtitle: "Settings",
     path: "Settings / Downloads",
     sectionId: "settings-storage",
@@ -243,7 +288,7 @@ const SETTINGS_SEARCH_ITEMS = [
   {
     id: "settings-save-location",
     type: "settings",
-    title: "Default Save Location",
+    title: "Settings > Default Save Location",
     subtitle: "Settings / Downloads",
     path: "Settings / Downloads",
     sectionId: "settings-storage",
@@ -251,12 +296,25 @@ const SETTINGS_SEARCH_ITEMS = [
     icon: Folder,
     description: "Configure the folder used across all tools when saving or exporting files.",
     actions: ["Change default folder", "Reset to default", "View current save path"],
-    keywords: ["save", "folder", "path", "export", "download", "location", "locaton", "default folder", "files"],
+    keywords: ["save", "folder", "path", "export", "download", "location", "locaton", "default folder", "files", "output"],
+    previewKind: "save-location",
+  },
+  {
+    id: "settings-storage",
+    type: "settings",
+    title: "Settings > Storage",
+    subtitle: "Settings",
+    path: "Settings / Storage",
+    sectionId: "settings-storage",
+    icon: HardDrive,
+    description: "Set storage defaults, download folders, and per-tool save overrides.",
+    actions: ["Open storage", "Change folder", "Reset default"],
+    keywords: ["storage", "stroage", "save", "location", "limits", "folders", "disk"],
   },
   {
     id: "settings-quality-format",
     type: "settings",
-    title: "Quality & Format",
+    title: "Settings > Quality & Format",
     subtitle: "Settings",
     path: "Settings / Tools",
     sectionId: "settings-tools",
@@ -268,7 +326,7 @@ const SETTINGS_SEARCH_ITEMS = [
   {
     id: "settings-advanced",
     type: "settings",
-    title: "Advanced",
+    title: "Settings > Advanced",
     subtitle: "Settings",
     path: "Settings / Advanced",
     sectionId: "settings-tools",
@@ -280,7 +338,7 @@ const SETTINGS_SEARCH_ITEMS = [
   {
     id: "settings-browser",
     type: "settings",
-    title: "Browser",
+    title: "Settings > Browser",
     subtitle: "Settings",
     path: "Settings / Browser",
     sectionId: "settings-display",
@@ -292,7 +350,7 @@ const SETTINGS_SEARCH_ITEMS = [
   {
     id: "settings-proxy-network",
     type: "settings",
-    title: "Proxy & Network",
+    title: "Settings > Proxy & Network",
     subtitle: "Settings",
     path: "Settings / Network",
     sectionId: "settings-tools",
@@ -304,7 +362,7 @@ const SETTINGS_SEARCH_ITEMS = [
   {
     id: "settings-notifications",
     type: "settings",
-    title: "Notifications",
+    title: "Settings > Notifications",
     subtitle: "Settings",
     path: "Settings / Notifications",
     sectionId: "settings-display",
@@ -316,19 +374,19 @@ const SETTINGS_SEARCH_ITEMS = [
   {
     id: "settings-shortcuts",
     type: "settings",
-    title: "Shortcuts",
+    title: "Settings > Shortcuts",
     subtitle: "Settings",
     path: "Settings / Shortcuts",
     sectionId: "settings-display",
     icon: Keyboard,
     description: "Open keyboard and navigation controls, including command search.",
     actions: ["Use Ctrl K", "Review navigation", "Open display settings"],
-    keywords: ["shortcuts", "keyboard", "hotkey", "ctrl", "command", "cmd", "keys"],
+    keywords: ["shortcuts", "shorcut", "keyboard", "hotkey", "ctrl", "command", "cmd", "keys"],
   },
   {
     id: "settings-about",
     type: "settings",
-    title: "About",
+    title: "Settings > About",
     subtitle: "Settings",
     path: "Settings / About",
     sectionId: "settings-tools",
@@ -336,6 +394,68 @@ const SETTINGS_SEARCH_ITEMS = [
     description: "Review Flow version, build type, diagnostics, and update status.",
     actions: ["Check updates", "Copy diagnostics", "Review version"],
     keywords: ["about", "version", "update", "diagnostics", "flow"],
+  },
+];
+
+const TUBE_DISPLAY_COMMAND_ITEMS = [
+  {
+    id: "tube-display-compact",
+    type: "tube-display",
+    title: "Tube > Compact Display",
+    subtitle: "Tube",
+    path: "Tube / Display",
+    workspace: "youtube",
+    displayMode: "compact",
+    icon: ListVideo,
+    description: "Use tighter queue cards so many downloads are easier to scan.",
+    actions: ["Apply Compact", "Open Tube"],
+    keywords: ["tube", "video", "download", "compact", "display", "layout", "queue", "small"],
+    previewKind: "tube-display",
+  },
+  {
+    id: "tube-display-large",
+    type: "tube-display",
+    title: "Tube > Large Display",
+    subtitle: "Tube",
+    path: "Tube / Display",
+    workspace: "youtube",
+    displayMode: "large",
+    icon: Video,
+    description: "Use larger media cards with bigger previews and more visual breathing room.",
+    actions: ["Apply Large", "Open Tube"],
+    keywords: ["tube", "video", "download", "large", "display", "layout", "queue", "box"],
+    previewKind: "tube-display",
+  },
+  {
+    id: "tube-display-horizontal",
+    type: "tube-display",
+    title: "Tube > Horizontal Display",
+    subtitle: "Tube",
+    path: "Tube / Display",
+    workspace: "youtube",
+    displayMode: "horizontal",
+    icon: ListVideo,
+    description: "Use wide horizontal queue rows for detailed download status and controls.",
+    actions: ["Apply Horizontal", "Open Tube"],
+    keywords: ["tube", "tub", "video", "download", "horizontal", "horisontal", "large horizontal", "display", "layout", "queue"],
+    previewKind: "tube-display",
+  },
+];
+
+const LOCAL_COMMAND_ITEMS = [
+  {
+    id: "local-create-app",
+    type: "local",
+    title: "Local Tools > Create App",
+    subtitle: "Local Tools",
+    path: "Settings / Local Tools",
+    sectionId: "settings-local-tools",
+    icon: Package,
+    description: "Build the local desktop app using Flow's existing Electron package process.",
+    actions: ["Create App", "Open output folder"],
+    keywords: ["build", "app", "desktop", "electron", "installer", "package", "local", "create app", "cret app"],
+    previewKind: "create-app",
+    localOnly: true,
   },
 ];
 
@@ -409,6 +529,7 @@ const COMMAND_ITEMS = [
   },
   ...SETTINGS_SEARCH_ITEMS,
   ...TOOL_COMMAND_ITEMS,
+  ...TUBE_DISPLAY_COMMAND_ITEMS,
 ];
 
 function getWriteCommandOrder() {
@@ -548,31 +669,43 @@ const WorkspaceActivity = memo(function WorkspaceActivity({ id, active, initialI
   );
 });
 
-function CommandPalette({ open, onClose, onRunCommand }) {
+function CommandPalette({
+  open,
+  onClose,
+  onRunCommand,
+  commandItems = COMMAND_ITEMS,
+  downloadFolders = {},
+  onChooseDownloadFolder,
+  onResetDownloadFolder,
+  onApplyTubeDisplay,
+  localBuilder,
+}) {
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [previewEngaged, setPreviewEngaged] = useState(false);
   const inputRef = useRef(null);
   const fuse = useMemo(
     () =>
-      new Fuse(COMMAND_ITEMS, {
+      new Fuse(commandItems, {
         keys: ["title", "subtitle", "path", "description", "keywords", "actions"],
         threshold: 0.36,
         ignoreLocation: true,
         minMatchCharLength: 1,
       }),
-    [],
+    [commandItems],
   );
   const results = useMemo(() => {
     const search = query.trim();
-    const items = search ? fuse.search(search).map((result) => result.item) : COMMAND_ITEMS;
+    const items = search ? fuse.search(search).map((result) => result.item) : commandItems;
     return items.slice(0, 14);
-  }, [fuse, query]);
+  }, [commandItems, fuse, query]);
   const selected = results[Math.min(activeIndex, Math.max(0, results.length - 1))] || results[0];
 
   useEffect(() => {
     if (!open) return;
     setQuery("");
     setActiveIndex(0);
+    setPreviewEngaged(false);
     const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 60);
     return () => window.clearTimeout(focusTimer);
   }, [open]);
@@ -597,16 +730,29 @@ function CommandPalette({ open, onClose, onRunCommand }) {
       }
       if (event.key === "Enter" && selected) {
         event.preventDefault();
+        if (event.ctrlKey || event.metaKey) {
+          setPreviewEngaged(true);
+          return;
+        }
+        if (!previewEngaged) {
+          setPreviewEngaged(true);
+          return;
+        }
         onRunCommand(selected);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [open, onClose, onRunCommand, results.length, selected]);
+  }, [open, onClose, onRunCommand, previewEngaged, results.length, selected]);
 
   useEffect(() => {
     setActiveIndex(0);
+    setPreviewEngaged(false);
   }, [query]);
+
+  useEffect(() => {
+    setPreviewEngaged(false);
+  }, [activeIndex]);
 
   if (!open || typeof document === "undefined") return null;
 
@@ -661,7 +807,7 @@ function CommandPalette({ open, onClose, onRunCommand }) {
               </div>
             )}
           </div>
-          <aside className="command-preview" aria-live="polite">
+          <aside className={`command-preview ${previewEngaged ? "is-engaged" : ""}`} aria-live="polite">
             {selected ? (
               <>
                 <div className="command-preview-head">
@@ -673,6 +819,7 @@ function CommandPalette({ open, onClose, onRunCommand }) {
                   </span>
                   <button type="button" onClick={() => onRunCommand(selected)} aria-label={`Open ${selected.title}`}>
                     <ExternalLink size={18} />
+                    <span>Open</span>
                   </button>
                 </div>
                 <p className="command-eyebrow">Quick look</p>
@@ -682,6 +829,49 @@ function CommandPalette({ open, onClose, onRunCommand }) {
                   <p className="command-preview-label">Preview</p>
                   <p>{selected.description}</p>
                 </div>
+                {selected.previewKind === "save-location" && (
+                  <div className="command-preview-card">
+                    <p className="command-preview-label">Current path</p>
+                    <p className="command-path-value">{downloadFolders.global || "No default folder selected"}</p>
+                    <div className="command-inline-actions">
+                      <button type="button" onClick={onChooseDownloadFolder}>Change Folder</button>
+                      <button type="button" onClick={onResetDownloadFolder}>Reset</button>
+                    </div>
+                  </div>
+                )}
+                {selected.previewKind === "tube-display" && (
+                  <div className="command-preview-card">
+                    <p className="command-preview-label">Display mode</p>
+                    <div className="command-display-options">
+                      {["compact", "large", "horizontal"].map((mode) => (
+                        <button
+                          key={mode}
+                          type="button"
+                          className={selected.displayMode === mode ? "is-selected" : ""}
+                          onClick={() => onApplyTubeDisplay?.(mode)}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {selected.previewKind === "create-app" && (
+                  <div className="command-preview-card">
+                    <p className="command-preview-label">Local builder</p>
+                    <p>{localBuilder?.status || "Ready"}</p>
+                    {localBuilder?.outputPath && <p className="command-path-value">{localBuilder.outputPath}</p>}
+                    {localBuilder?.error && <p className="command-error-text">{localBuilder.error}</p>}
+                    <div className="command-inline-actions">
+                      <button type="button" onClick={localBuilder?.create} disabled={localBuilder?.building}>
+                        {localBuilder?.building ? "Building..." : "Create App"}
+                      </button>
+                      <button type="button" onClick={localBuilder?.openFolder} disabled={!localBuilder?.outputPath}>
+                        Open Folder
+                      </button>
+                    </div>
+                  </div>
+                )}
                 <div className="command-action-list">
                   {(selected.actions || ["Open"]).slice(0, 4).map((action) => (
                     <button key={action} type="button" onClick={() => onRunCommand(selected)}>
@@ -906,9 +1096,15 @@ function SettingsPopover({
   setNavLayout,
   showNavIcons,
   setShowNavIcons,
+  onOpenCommandPalette,
+  isLocalRuntime,
+  localBuildState,
+  onCreateLocalApp,
+  onOpenLocalBuildFolder,
 }) {
   const [open, setOpen] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const [maximized, setMaximized] = useState(false);
   const [expandedColorPanel, setExpandedColorPanel] = useState(null);
   const [colorEditorMode, setColorEditorMode] = useState("RGB");
   const [appVersion, setAppVersion] = useState(APP_VERSION);
@@ -951,6 +1147,7 @@ function SettingsPopover({
     window.setTimeout(() => {
       setOpen(false);
       setIsClosing(false);
+      setMaximized(false);
     }, 320);
   };
 
@@ -1108,12 +1305,7 @@ function SettingsPopover({
       icon: Folder,
     },
   ];
-  const quickSettings = [
-    { id: "settings-appearance", label: "Appearance", icon: Palette },
-    { id: "settings-display", label: "Display", icon: Monitor },
-    { id: "settings-storage", label: "Storage", icon: Folder },
-    { id: "settings-tools", label: "Tools", icon: Wrench },
-  ];
+  const quickSettings = SETTINGS_NAV_ITEMS.filter((item) => isLocalRuntime || item.id !== "settings-about");
   const settingsFuse = useMemo(
     () =>
       new Fuse(SETTINGS_SEARCH_ITEMS, {
@@ -1242,7 +1434,7 @@ function SettingsPopover({
             onClick={closeSettings}
           />
         <div
-          className={`settings-dashboard-shell absolute bottom-6 right-6 top-6 flex w-[36rem] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-[2rem] border shadow-2xl shadow-[var(--flow-shadow)] ${
+          className={`settings-dashboard-shell ${maximized ? "is-maximized" : ""} absolute bottom-6 right-6 top-6 flex w-[36rem] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-[2rem] border shadow-2xl shadow-[var(--flow-shadow)] ${
             isClosing ? "animate-settings-drawer-out" : "animate-settings-drawer"
           }`}
         >
@@ -1261,12 +1453,22 @@ function SettingsPopover({
                 </p>
               </div>
             </div>
-            <button
-              onClick={closeSettings}
-              className="grid h-9 w-9 place-items-center rounded-full text-[var(--flow-muted)] transition-all duration-300 hover:rotate-90 hover:bg-[var(--flow-soft)] hover:text-[var(--flow-text)]"
-            >
-              <X size={14} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setMaximized((current) => !current)}
+                aria-label={maximized ? "Restore settings" : "Maximize settings"}
+                className="grid h-9 w-9 place-items-center rounded-full text-[var(--flow-muted)] transition-all duration-300 hover:-translate-y-0.5 hover:bg-[var(--flow-soft)] hover:text-[var(--flow-text)]"
+              >
+                {maximized ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+              </button>
+              <button
+                onClick={closeSettings}
+                className="grid h-9 w-9 place-items-center rounded-full text-[var(--flow-muted)] transition-all duration-300 hover:rotate-90 hover:bg-[var(--flow-soft)] hover:text-[var(--flow-text)]"
+              >
+                <X size={14} />
+              </button>
+            </div>
           </div>
 
           <div className="settings-surface custom-scrollbar min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
@@ -1290,6 +1492,8 @@ function SettingsPopover({
                 <input
                   value={settingsSearch}
                   onChange={(event) => setSettingsSearch(event.target.value)}
+                  onFocus={onOpenCommandPalette}
+                  onClick={onOpenCommandPalette}
                   placeholder="Search settings..."
                   aria-label="Search settings"
                 />
@@ -1319,10 +1523,13 @@ function SettingsPopover({
             </section>
 
             <nav className="settings-quick-nav" aria-label="Settings sections">
-              {quickSettings.map(({ id, label, icon: Icon }) => (
-                <button key={id} type="button" onClick={() => openSettingSection(id)}>
+              {quickSettings.map(({ id, targetId, label, description, icon: Icon }) => (
+                <button key={id} type="button" onClick={() => openSettingSection(targetId || id)}>
                   <Icon size={15} />
-                  <span>{label}</span>
+                  <span>
+                    <strong>{label}</strong>
+                    <small>{description}</small>
+                  </span>
                 </button>
               ))}
             </nav>
@@ -2031,6 +2238,51 @@ function SettingsPopover({
               </div>
             </div>
 
+            {isLocalRuntime && (
+              <div id="settings-local-tools" className="rounded-2xl border border-[var(--flow-border)] bg-[var(--flow-soft)] p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 text-[var(--flow-muted)]">
+                    <Package size={14} />
+                    <span className="text-[10px] font-black uppercase tracking-widest">
+                      Local Tools
+                    </span>
+                  </div>
+                  <span className="rounded-lg bg-[var(--pumpkin-700)] px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-white">
+                    Local only
+                  </span>
+                </div>
+                <p className="text-xs font-semibold text-[var(--flow-text)]">
+                  Create App
+                </p>
+                <p className="mt-1 text-[10px] font-medium leading-relaxed text-[var(--flow-muted)]">
+                  Builds the local desktop app and shows the output folder. This control is hidden on the deployed website.
+                </p>
+                <div className="mt-3 rounded-xl border border-[var(--flow-border)] bg-[var(--flow-card)] px-3 py-2 text-[10px] font-bold text-[var(--flow-muted)]">
+                  {localBuildState.status}
+                  {localBuildState.outputPath && <div className="mt-1 truncate text-[var(--flow-text)]">{localBuildState.outputPath}</div>}
+                  {localBuildState.error && <div className="mt-1 text-red-500">{localBuildState.error}</div>}
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={onCreateLocalApp}
+                    disabled={localBuildState.building || !window.flow?.desktop?.createApp}
+                    className="rounded-xl bg-[linear-gradient(135deg,var(--pumpkin-500),var(--pumpkin-700))] px-3 py-2 text-[10px] font-black uppercase tracking-widest text-white transition hover:-translate-y-0.5 disabled:opacity-40"
+                  >
+                    {localBuildState.building ? "Building..." : "Create App"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onOpenLocalBuildFolder}
+                    disabled={!localBuildState.outputPath}
+                    className="rounded-xl bg-[var(--flow-card)] px-3 py-2 text-[10px] font-black uppercase tracking-widest text-[var(--flow-text)] transition hover:-translate-y-0.5 disabled:opacity-40"
+                  >
+                    Open Folder
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="rounded-2xl border border-zinc-100 bg-white/50 p-4 dark:border-zinc-800 dark:bg-zinc-950/50">
               <div className="mb-3 flex items-center gap-2 text-zinc-500">
                 <Monitor size={14} />
@@ -2267,8 +2519,17 @@ export default function App() {
   const [navLayout, setNavLayout] = useState(getSavedNavLayout);
   const [showNavIcons, setShowNavIcons] = useState(getSavedNavShowIcons);
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [desktopPrefs, setDesktopPrefs] = useState(() =>
+    window.flow?.desktop?.getPreferences ? null : getWebDownloadFolderPreferences(),
+  );
+  const [localBuildState, setLocalBuildState] = useState({ status: "Ready", building: false, outputPath: "", error: "" });
   const canPopoutWorkspace = ["writing", "instagram", "gallery"].includes(workspace);
   const popoutAvailable = Boolean(window.flow?.windows?.openTool);
+  const isLocalRuntime = Boolean(window.flow?.platform?.isElectron) || import.meta.env.DEV || ["localhost", "127.0.0.1"].includes(window.location.hostname);
+  const commandItems = useMemo(
+    () => (isLocalRuntime ? [...COMMAND_ITEMS, ...LOCAL_COMMAND_ITEMS] : COMMAND_ITEMS),
+    [isLocalRuntime],
+  );
   const setPanelAccent = useCallback((panel, color) => {
     setPanelAccents((current) => {
       const next = { ...current };
@@ -2306,6 +2567,19 @@ export default function App() {
     window.addEventListener("studio-notify", handler);
     return () => window.removeEventListener("studio-notify", handler);
   }, [soundEnabled, notifsEnabled]);
+
+  useEffect(() => {
+    const loadPrefs = () => {
+      if (window.flow?.desktop?.getPreferences) {
+        window.flow.desktop.getPreferences().then((prefs) => setDesktopPrefs(prefs || null)).catch(() => {});
+      } else {
+        setDesktopPrefs(getWebDownloadFolderPreferences());
+      }
+    };
+    loadPrefs();
+    window.addEventListener("flow-download-folders-changed", loadPrefs);
+    return () => window.removeEventListener("flow-download-folders-changed", loadPrefs);
+  }, []);
 
   useEffect(() => {
     document.documentElement.style.setProperty(
@@ -2403,8 +2677,9 @@ export default function App() {
 
   const runCommand = useCallback((item) => {
     if (!item) return;
-    setCommandPaletteOpen(false);
+    if (item.previewKind === "create-app") return;
     if (item.type === "settings" || item.id === "go-settings") {
+      setCommandPaletteOpen(false);
       window.dispatchEvent(
         new CustomEvent("flow-open-settings-section", {
           detail: {
@@ -2415,7 +2690,15 @@ export default function App() {
       );
       return;
     }
+    if (item.type === "tube-display") {
+      localStorage.setItem("flow-tube-display-mode", item.displayMode);
+      window.dispatchEvent(new CustomEvent("flow-tube-display-mode", { detail: { mode: item.displayMode } }));
+      setCommandPaletteOpen(false);
+      switchTab("youtube");
+      return;
+    }
     if (item.toolSection) {
+      setCommandPaletteOpen(false);
       sessionStorage.setItem("flow-tools-section", item.toolSection);
       switchTab("tools");
       window.setTimeout(() => {
@@ -2423,8 +2706,71 @@ export default function App() {
       }, 60);
       return;
     }
-    if (item.workspace) switchTab(item.workspace);
+    if (item.workspace) {
+      setCommandPaletteOpen(false);
+      switchTab(item.workspace);
+    }
   }, [switchTab]);
+
+  const chooseGlobalDownloadFolder = useCallback(async () => {
+    try {
+      const prefs = window.flow?.desktop?.selectDownloadFolder
+        ? await window.flow.desktop.selectDownloadFolder("global")
+        : await chooseWebDownloadFolder("global");
+      if (prefs && !prefs.canceled) {
+        setDesktopPrefs(prefs);
+        window.dispatchEvent(new Event("flow-download-folders-changed"));
+      }
+    } catch (error) {
+      window.dispatchEvent(new CustomEvent("studio-notify", {
+        detail: { title: "Folder Not Set", message: error?.message || "Could not open the folder picker.", type: "error" },
+      }));
+    }
+  }, []);
+
+  const resetGlobalDownloadFolder = useCallback(async () => {
+    const prefs = window.flow?.desktop?.setDownloadFolders
+      ? await window.flow.desktop.setDownloadFolders({ global: "", useGlobalForAll: true })
+      : setWebDownloadFolderPreferences({ global: "", useGlobalForAll: true });
+    if (prefs) {
+      setDesktopPrefs(prefs);
+      window.dispatchEvent(new Event("flow-download-folders-changed"));
+    }
+  }, []);
+
+  const applyTubeDisplayMode = useCallback((mode) => {
+    localStorage.setItem("flow-tube-display-mode", mode);
+    window.dispatchEvent(new CustomEvent("flow-tube-display-mode", { detail: { mode } }));
+  }, []);
+
+  const createLocalApp = useCallback(async () => {
+    if (!window.flow?.desktop?.createApp) return;
+    setLocalBuildState({ status: "Building app...", building: true, outputPath: "", error: "" });
+    try {
+      const result = await window.flow.desktop.createApp();
+      if (result?.ok) {
+        setLocalBuildState({
+          status: "App created successfully",
+          building: false,
+          outputPath: result.outputPath || result.releasePath || "",
+          error: "",
+        });
+      } else {
+        setLocalBuildState({
+          status: "Build failed",
+          building: false,
+          outputPath: "",
+          error: result?.error || "The app build did not complete.",
+        });
+      }
+    } catch (error) {
+      setLocalBuildState({ status: "Build failed", building: false, outputPath: "", error: error?.message || "The app build did not complete." });
+    }
+  }, []);
+
+  const openLocalBuildFolder = useCallback(() => {
+    if (localBuildState.outputPath) window.flow?.desktop?.showItemInFolder?.(localBuildState.outputPath);
+  }, [localBuildState.outputPath]);
 
   useEffect(() => {
     const handleCommandShortcut = (event) => {
@@ -2506,6 +2852,11 @@ export default function App() {
       setNavLayout={setNavLayout}
       showNavIcons={showNavIcons}
       setShowNavIcons={setShowNavIcons}
+      onOpenCommandPalette={() => setCommandPaletteOpen(true)}
+      isLocalRuntime={isLocalRuntime}
+      localBuildState={localBuildState}
+      onCreateLocalApp={createLocalApp}
+      onOpenLocalBuildFolder={openLocalBuildFolder}
     />
   );
 
@@ -2622,6 +2973,16 @@ export default function App() {
         open={commandPaletteOpen}
         onClose={() => setCommandPaletteOpen(false)}
         onRunCommand={runCommand}
+        commandItems={commandItems}
+        downloadFolders={desktopPrefs?.downloadFolders || {}}
+        onChooseDownloadFolder={chooseGlobalDownloadFolder}
+        onResetDownloadFolder={resetGlobalDownloadFolder}
+        onApplyTubeDisplay={applyTubeDisplayMode}
+        localBuilder={{
+          ...localBuildState,
+          create: createLocalApp,
+          openFolder: openLocalBuildFolder,
+        }}
       />
       <Notifications notifications={notifications} onDismiss={dismissNotif} />
       <UpdateCenter />
